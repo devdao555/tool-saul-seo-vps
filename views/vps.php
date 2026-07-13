@@ -3,8 +3,26 @@
 use App\Support\Csrf;
 
 /** @var array $vpsList */
+/** @var array $healthByVps */
 /** @var string|null $ok */
 /** @var string|null $error */
+
+$pctBadge = static function (?int $pct): string {
+    if ($pct === null) {
+        return '<span class="badge badge-muted">-</span>';
+    }
+    $class = $pct >= 90 ? 'badge-danger' : ($pct >= 75 ? 'badge-warn' : 'badge-success');
+    return "<span class=\"badge {$class}\">{$pct}%</span>";
+};
+
+$svcBadge = static function (?string $state): string {
+    if ($state === null) {
+        return '<span class="badge badge-muted">-</span>';
+    }
+    return $state === 'active'
+        ? '<span class="badge badge-success">on</span>'
+        : '<span class="badge badge-danger">off</span>';
+};
 ?>
 
 <?php if ($ok): ?><div class="alert alert-success"><?= htmlspecialchars($ok) ?></div><?php endif; ?>
@@ -41,24 +59,48 @@ use App\Support\Csrf;
 
   <div class="card">
     <h2>Danh sách VPS</h2>
-    <table>
-      <thead><tr><th>Label</th><th>IP</th><th>SSH</th><th>PHP</th><th></th></tr></thead>
+    <form method="post" action="/vps.php">
+      <?= Csrf::field() ?>
+      <input type="hidden" name="action" value="check_all_health">
+      <button type="submit" class="btn btn-ghost" style="margin-top:0;" <?= empty($vpsList) ? 'disabled' : '' ?>>Kiểm tra tất cả (mất ~1-2s/VPS)</button>
+    </form>
+    <table style="margin-top:16px;">
+      <thead><tr><th>Label</th><th>IP</th><th>CPU</th><th>RAM</th><th>Disk</th><th>nginx</th><th>mysql</th><th>redis</th><th>php-fpm</th><th></th></tr></thead>
       <tbody>
         <?php if (empty($vpsList)): ?>
-          <tr><td colspan="5" style="color:var(--text-dim);">Chưa có VPS nào.</td></tr>
+          <tr><td colspan="10" style="color:var(--text-dim);">Chưa có VPS nào.</td></tr>
         <?php else: ?>
           <?php foreach ($vpsList as $v): ?>
+            <?php $h = $healthByVps[(int) $v['id']] ?? null; ?>
             <tr>
               <td><?= htmlspecialchars($v['label']) ?></td>
               <td><?= htmlspecialchars($v['ip']) ?></td>
-              <td><?= htmlspecialchars($v['ssh_user']) ?>@<?= (int) $v['ssh_port'] ?></td>
-              <td><?= htmlspecialchars($v['php_version']) ?></td>
-              <td>
-                <form method="post" action="/vps.php" onsubmit="return confirm('Xoá VPS này khỏi danh sách? (Không xoá gì trên VPS thật)');">
+              <?php if (!$h): ?>
+                <td colspan="7" style="color:var(--text-dim);">Chưa kiểm tra.</td>
+              <?php elseif (empty($h['reachable'])): ?>
+                <td colspan="7"><span class="badge badge-danger">Không kết nối được</span></td>
+              <?php else: ?>
+                <td><?= $pctBadge((int) $h['cpu_percent']) ?></td>
+                <td><?= $pctBadge((int) $h['ram_percent']) ?></td>
+                <td><?= $pctBadge((int) $h['disk_percent']) ?></td>
+                <?php $svc = $h['services'] ?? []; ?>
+                <td><?= $svcBadge($svc['nginx'] ?? null) ?></td>
+                <td><?= $svcBadge($svc['mysql'] ?? null) ?></td>
+                <td><?= $svcBadge($svc['redis'] ?? null) ?></td>
+                <td><?= $svcBadge($svc['php-fpm'] ?? null) ?></td>
+              <?php endif; ?>
+              <td style="white-space:nowrap;">
+                <form method="post" action="/vps.php" style="display:inline;">
+                  <?= Csrf::field() ?>
+                  <input type="hidden" name="action" value="check_health">
+                  <input type="hidden" name="id" value="<?= (int) $v['id'] ?>">
+                  <button type="submit" class="btn btn-ghost" style="margin-top:0;padding:6px 10px;font-size:12px;">Check</button>
+                </form>
+                <form method="post" action="/vps.php" onsubmit="return confirm('Xoá VPS này khỏi danh sách? (Không xoá gì trên VPS thật)');" style="display:inline;">
                   <?= Csrf::field() ?>
                   <input type="hidden" name="action" value="delete">
                   <input type="hidden" name="id" value="<?= (int) $v['id'] ?>">
-                  <button type="submit" class="btn btn-danger" style="margin-top:0;padding:6px 12px;font-size:12px;">Xoá</button>
+                  <button type="submit" class="btn btn-danger" style="margin-top:0;padding:6px 10px;font-size:12px;">Xoá</button>
                 </form>
               </td>
             </tr>
@@ -66,5 +108,22 @@ use App\Support\Csrf;
         <?php endif; ?>
       </tbody>
     </table>
+    <?php if (!empty($vpsList)): ?>
+      <p class="small-note">
+        Dịch vụ "off" nghĩa là không active theo systemd (có thể do dùng init khác, hoặc thật sự đang dừng) — kiểm tra thủ công trước khi kết luận.
+        Restart nhanh:
+        <?php foreach ($vpsList as $v): ?>
+          <?php foreach (['nginx', 'mysql', 'redis', 'php-fpm'] as $svcKey): ?>
+            <form method="post" action="/vps.php" style="display:inline;" onsubmit="return confirm('Restart <?= $svcKey ?> trên <?= htmlspecialchars($v['label']) ?>?');">
+              <?= Csrf::field() ?>
+              <input type="hidden" name="action" value="restart_service">
+              <input type="hidden" name="id" value="<?= (int) $v['id'] ?>">
+              <input type="hidden" name="service" value="<?= $svcKey ?>">
+              <button type="submit" class="btn btn-ghost" style="margin-top:6px;margin-right:6px;padding:4px 8px;font-size:11px;"><?= htmlspecialchars($v['label']) ?> · <?= $svcKey ?></button>
+            </form>
+          <?php endforeach; ?>
+        <?php endforeach; ?>
+      </p>
+    <?php endif; ?>
   </div>
 </div>

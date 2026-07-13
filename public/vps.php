@@ -6,6 +6,7 @@ use App\Auth\Auth;
 use App\Controllers\VpsController;
 use App\Support\Csrf;
 use App\Support\Flash;
+use App\Vps\VpsHealthRepository;
 use App\Vps\VpsRepository;
 
 Auth::requireLogin('/login.php');
@@ -25,6 +26,21 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 VpsController::deleteVps((int) ($_POST['id'] ?? 0));
                 Flash::set('ok', 'Đã xoá VPS khỏi hệ thống (không xoá gì trên VPS thật).');
                 break;
+
+            case 'check_health':
+                VpsController::checkHealth((int) ($_POST['id'] ?? 0));
+                Flash::set('ok', 'Đã kiểm tra tình trạng VPS.');
+                break;
+
+            case 'check_all_health':
+                VpsController::checkAllHealth();
+                Flash::set('ok', 'Đã kiểm tra tình trạng toàn bộ VPS.');
+                break;
+
+            case 'restart_service':
+                VpsController::restartService((int) ($_POST['id'] ?? 0), (string) ($_POST['service'] ?? ''));
+                Flash::set('ok', 'Đã gửi lệnh restart dịch vụ.');
+                break;
         }
     } catch (\Throwable $e) {
         Flash::set('error', $e->getMessage());
@@ -35,6 +51,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 }
 
 $vpsList = VpsRepository::all();
+$healthByVps = VpsHealthRepository::all();
 $ok = Flash::pull('ok');
 $error = Flash::pull('error');
 

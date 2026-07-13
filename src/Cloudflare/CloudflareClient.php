@@ -102,34 +102,71 @@ class CloudflareClient
     }
 
     /**
-     * Creates (or updates, if one already exists for the same hostname/type) the A record for the
-     * apex domain and a CNAME for www pointing at the apex — matching the "domain.com IP" bulk push UI.
+     * Creates (or updates, if one already exists for the same hostname/type) the apex A/AAAA
+     * record and a CNAME for www pointing at the apex — matching the "domain.com IP" bulk push UI.
      */
-    public function pushARecordWithWww(string $zoneId, string $domain, string $ip, bool $proxied = true): array
+    public function pushIpRecordWithWww(string $zoneId, string $domain, string $ip, string $type = 'A', bool $proxied = true): array
     {
         $existing = $this->listDnsRecords($zoneId);
 
         $aRecord = null;
         $wwwRecord = null;
         foreach ($existing as $record) {
-            if ($record['type'] === 'A' && $record['name'] === $domain) {
+            if ($record['type'] === $type && $record['name'] === $domain) {
                 $aRecord = $record;
             }
-            if (in_array($record['type'], ['CNAME', 'A'], true) && $record['name'] === 'www.' . $domain) {
+            if (in_array($record['type'], ['CNAME', 'A', 'AAAA'], true) && $record['name'] === 'www.' . $domain) {
                 $wwwRecord = $record;
             }
         }
 
         $result = [];
-        $result['a'] = $aRecord
-            ? $this->updateDnsRecord($zoneId, $aRecord['id'], 'A', $domain, $ip, $proxied)
-            : $this->createDnsRecord($zoneId, 'A', $domain, $ip, $proxied);
+        $result['ip'] = $aRecord
+            ? $this->updateDnsRecord($zoneId, $aRecord['id'], $type, $domain, $ip, $proxied)
+            : $this->createDnsRecord($zoneId, $type, $domain, $ip, $proxied);
 
         $result['www'] = $wwwRecord
             ? $this->updateDnsRecord($zoneId, $wwwRecord['id'], 'CNAME', 'www.' . $domain, $domain, $proxied)
             : $this->createDnsRecord($zoneId, 'CNAME', 'www.' . $domain, $domain, $proxied);
 
         return $result;
+    }
+
+    /** @deprecated use pushIpRecordWithWww($zoneId, $domain, $ip, 'A', $proxied) */
+    public function pushARecordWithWww(string $zoneId, string $domain, string $ip, bool $proxied = true): array
+    {
+        return $this->pushIpRecordWithWww($zoneId, $domain, $ip, 'A', $proxied);
+    }
+
+    public function patchDnsRecord(string $zoneId, string $recordId, array $fields): array
+    {
+        $data = $this->call('PATCH', '/zones/' . $zoneId . '/dns_records/' . $recordId, $fields);
+        return $data['result'];
+    }
+
+    /**
+     * Toggles the Cloudflare proxy ("orange cloud") on every proxyable record (A/AAAA/CNAME) in
+     * the zone. Returns how many records were actually changed.
+     */
+    public function setAllRecordsProxied(string $zoneId, bool $proxied): int
+    {
+        $changed = 0;
+        foreach ($this->listDnsRecords($zoneId) as $record) {
+            if (!in_array($record['type'], ['A', 'AAAA', 'CNAME'], true)) {
+                continue;
+            }
+            if ((bool) $record['proxied'] === $proxied) {
+                continue;
+            }
+            $this->patchDnsRecord($zoneId, $record['id'], ['proxied' => $proxied]);
+            $changed++;
+        }
+        return $changed;
+    }
+
+    public function purgeCache(string $zoneId, bool $everything = true): void
+    {
+        $this->call('POST', '/zones/' . $zoneId . '/purge_cache', ['purge_everything' => $everything]);
     }
 
     public function deleteAllDnsRecords(string $zoneId): int

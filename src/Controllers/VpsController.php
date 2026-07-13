@@ -5,6 +5,8 @@ namespace App\Controllers;
 use App\Support\Env;
 use App\Support\Logger;
 use App\Support\Validator;
+use App\Vps\VpsHealthRepository;
+use App\Vps\VpsMonitor;
 use App\Vps\VpsRepository;
 
 class VpsController
@@ -79,5 +81,47 @@ class VpsController
         }
         VpsRepository::delete($id);
         Logger::log('vps', 'delete', $vps['ip'], 'success', $vps['label']);
+    }
+
+    public static function checkHealth(int $id): array
+    {
+        $vps = VpsRepository::find($id);
+        if (!$vps) {
+            throw new \RuntimeException('VPS không tồn tại.');
+        }
+        $health = (new VpsMonitor($vps))->checkHealth();
+        VpsHealthRepository::upsert($id, $health);
+
+        $status = empty($health['reachable']) ? 'error' : (empty($health['error']) ? 'success' : 'warning');
+        Logger::log('vps', 'health_check', $vps['ip'], $status, $health['error'] ?? "CPU {$health['cpu_percent']}% · RAM {$health['ram_percent']}% · Disk {$health['disk_percent']}%");
+
+        return $health;
+    }
+
+    public static function checkAllHealth(): array
+    {
+        $results = [];
+        foreach (VpsRepository::all() as $vps) {
+            $health = (new VpsMonitor($vps))->checkHealth();
+            VpsHealthRepository::upsert((int) $vps['id'], $health);
+            $status = empty($health['reachable']) ? 'error' : (empty($health['error']) ? 'success' : 'warning');
+            Logger::log('vps', 'health_check', $vps['ip'], $status, $health['error'] ?? "CPU {$health['cpu_percent']}% · RAM {$health['ram_percent']}% · Disk {$health['disk_percent']}%");
+            $results[(int) $vps['id']] = $health;
+        }
+        return $results;
+    }
+
+    public static function restartService(int $id, string $serviceKey): void
+    {
+        $vps = VpsRepository::find($id);
+        if (!$vps) {
+            throw new \RuntimeException('VPS không tồn tại.');
+        }
+        $result = (new VpsMonitor($vps))->restartService($serviceKey);
+        if (!$result->ok()) {
+            Logger::log('vps', 'restart_service', $vps['ip'], 'error', "{$serviceKey}: " . trim($result->stderr . ' ' . $result->stdout));
+            throw new \RuntimeException("Restart {$serviceKey} thất bại: " . trim($result->stderr . ' ' . $result->stdout));
+        }
+        Logger::log('vps', 'restart_service', $vps['ip'], 'success', $serviceKey);
     }
 }

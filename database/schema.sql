@@ -50,5 +50,45 @@ CREATE TABLE IF NOT EXISTS settings (
     value_enc TEXT
 );
 
+CREATE TABLE IF NOT EXISTS security_scans (
+    domain TEXT PRIMARY KEY,
+    vps_id INTEGER,
+    status TEXT NOT NULL,
+    summary TEXT,
+    detail TEXT,
+    scanned_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (vps_id) REFERENCES vps(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS vps_health (
+    vps_id INTEGER PRIMARY KEY,
+    reachable INTEGER NOT NULL DEFAULT 0,
+    cpu_percent INTEGER,
+    ram_percent INTEGER,
+    ram_used_mb INTEGER,
+    ram_total_mb INTEGER,
+    disk_percent INTEGER,
+    disk_used_gb REAL,
+    disk_total_gb REAL,
+    load_avg TEXT,
+    uptime TEXT,
+    services TEXT,
+    error TEXT,
+    checked_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (vps_id) REFERENCES vps(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ssl_checks (
+    domain TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    valid_to TEXT,
+    days_left INTEGER,
+    issuer TEXT,
+    https_ok INTEGER,
+    http_redirects_https INTEGER,
+    error TEXT,
+    checked_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_domains_domain ON domains(domain);
 CREATE INDEX IF NOT EXISTS idx_logs_created_at ON system_logs(created_at);

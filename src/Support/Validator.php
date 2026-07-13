@@ -18,6 +18,11 @@ class Validator
         return filter_var($value, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false;
     }
 
+    public static function isIpv6(string $value): bool
+    {
+        return filter_var($value, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false;
+    }
+
     public static function isSafeUsername(string $value): bool
     {
         return (bool) preg_match('/^[A-Za-z0-9_-]{1,60}$/', $value);

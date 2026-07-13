@@ -26,7 +26,7 @@ if (empty($results)) {
           — <?= htmlspecialchars($row['status']) ?>
         <?php endif; ?>
         <?php if (isset($row['count'])): ?>
-          — đã xoá <?= (int) $row['count'] ?> mục
+          — <?= (int) $row['count'] ?> mục thay đổi
         <?php endif; ?>
       <?php else: ?>
         — <?= htmlspecialchars($row['error'] ?? 'Không xác định') ?>

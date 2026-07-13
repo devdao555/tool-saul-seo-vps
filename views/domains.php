@@ -9,6 +9,9 @@ use App\Support\Csrf;
 /** @var array|null $pushDnsResults */
 /** @var array|null $deleteDnsResults */
 /** @var array|null $pushNsResults */
+/** @var array|null $purgeCacheResults */
+/** @var array|null $toggleProxyResults */
+/** @var array|null $scanDnsResults */
 /** @var string|null $error */
 ?>
 
@@ -76,7 +79,7 @@ use App\Support\Csrf;
 
   <div class="card">
     <h2>Push DNS</h2>
-    <p class="hint">Mỗi dòng: <code>domain.com IP</code> — tạo/cập nhật A record + CNAME www.</p>
+    <p class="hint">Mỗi dòng: <code>domain.com IP</code> (IPv4 hoặc IPv6) — tạo/cập nhật A/AAAA record + CNAME www.</p>
     <form method="post" action="/domains.php">
       <?= Csrf::field() ?>
       <input type="hidden" name="action" value="push_dns">
@@ -105,15 +108,59 @@ use App\Support\Csrf;
   </div>
 </div>
 
+<div class="grid">
+  <div class="card">
+    <h2>Purge Cache Cloudflare</h2>
+    <p class="hint">Xoá toàn bộ cache đang được Cloudflare lưu cho domain.</p>
+    <form method="post" action="/domains.php">
+      <?= Csrf::field() ?>
+      <input type="hidden" name="action" value="purge_cache">
+      <label>Danh sách domain</label>
+      <textarea name="domains_purge_cache" placeholder="abc.com&#10;xyz.com" required></textarea>
+      <button type="submit" class="btn btn-primary">Purge cache</button>
+    </form>
+    <?php $results = $purgeCacheResults; require __DIR__ . '/partials/result-table.php'; ?>
+  </div>
+
+  <div class="card">
+    <h2>Bật / Tắt Proxy (mây cam)</h2>
+    <p class="hint">Áp dụng cho toàn bộ A/AAAA/CNAME record của domain.</p>
+    <form method="post" action="/domains.php">
+      <?= Csrf::field() ?>
+      <input type="hidden" name="action" value="toggle_proxy">
+      <label>Danh sách domain</label>
+      <textarea name="domains_toggle_proxy" placeholder="abc.com&#10;xyz.com" required></textarea>
+      <label>Trạng thái</label>
+      <select name="proxy_state">
+        <option value="on">Bật Proxy</option>
+        <option value="off">Tắt Proxy (chỉ DNS)</option>
+      </select>
+      <button type="submit" class="btn btn-primary">Áp dụng</button>
+    </form>
+    <?php $results = $toggleProxyResults; require __DIR__ . '/partials/result-table.php'; ?>
+  </div>
+
+  <div class="card">
+    <h2>Scan DNS toàn hệ thống</h2>
+    <p class="hint">Kiểm tra mọi domain đã có zone: domain nào thiếu A/AAAA record, hoặc IP đang trỏ khác với VPS đã gán trong hệ thống.</p>
+    <form method="post" action="/domains.php">
+      <?= Csrf::field() ?>
+      <input type="hidden" name="action" value="scan_dns_health">
+      <button type="submit" class="btn btn-ghost">Scan toàn bộ domain</button>
+    </form>
+    <?php $results = $scanDnsResults; require __DIR__ . '/partials/result-table.php'; ?>
+  </div>
+</div>
+
 <div class="card">
   <h2>Danh sách domain đã quản lý</h2>
   <table>
     <thead>
-      <tr><th>Domain</th><th>CF Account</th><th>Trạng thái</th><th>NS1</th><th>NS2</th><th>VPS</th></tr>
+      <tr><th>Domain</th><th>CF Account</th><th>Trạng thái</th><th>NS1</th><th>NS2</th><th>VPS</th><th>Bảo mật</th></tr>
     </thead>
     <tbody>
       <?php if (empty($domains)): ?>
-        <tr><td colspan="6" style="color:var(--text-dim);">Chưa có domain nào.</td></tr>
+        <tr><td colspan="7" style="color:var(--text-dim);">Chưa có domain nào.</td></tr>
       <?php else: ?>
         <?php foreach ($domains as $d): ?>
           <tr>
@@ -126,9 +173,20 @@ use App\Support\Csrf;
             <td><?= htmlspecialchars($d['ns1'] ?? '-') ?></td>
             <td><?= htmlspecialchars($d['ns2'] ?? '-') ?></td>
             <td><?= htmlspecialchars($d['vps_label'] ?? '-') ?></td>
+            <td>
+              <?php $secStatus = $d['security_status'] ?? null; ?>
+              <?php if ($secStatus === null): ?>
+                <span class="badge badge-muted">Chưa scan</span>
+              <?php else: ?>
+                <span class="badge <?= $secStatus === 'clean' ? 'badge-success' : ($secStatus === 'suspicious' ? 'badge-danger' : 'badge-muted') ?>">
+                  <?= $secStatus === 'clean' ? 'Sạch' : ($secStatus === 'suspicious' ? 'Nghi ngờ' : htmlspecialchars($secStatus)) ?>
+                </span>
+              <?php endif; ?>
+            </td>
           </tr>
         <?php endforeach; ?>
       <?php endif; ?>
     </tbody>
   </table>
+  <p class="small-note">Xem chi tiết / chạy scan mới tại <a href="/security.php">Bảo mật</a>.</p>
 </div>

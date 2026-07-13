@@ -21,6 +21,7 @@
       <tr><td>2.</td><td>Push NS sang Namecheap (hoặc registrar khác thủ công)</td></tr>
       <tr><td>3.</td><td>Push DNS trỏ VPS, hoặc <a href="/wordpress.php">tạo WordPress trắng</a></td></tr>
       <tr><td>4.</td><td>Cấu hình <a href="/redirects.php">301 redirect</a> nếu cần gộp domain</td></tr>
+      <tr><td>5.</td><td>Định kỳ <a href="/security.php">scan bảo mật</a> để phát hiện webshell/backdoor sớm</td></tr>
     </table>
   </div>
 </div>
@@ -36,7 +37,13 @@
         <div class="log-line">
           [<?= htmlspecialchars($log['created_at']) ?>] <strong><?= htmlspecialchars($log['module']) ?>/<?= htmlspecialchars($log['action']) ?></strong>
           <?= htmlspecialchars((string) $log['target']) ?> —
-          <span class="badge <?= $log['status'] === 'success' ? 'badge-success' : ($log['status'] === 'error' ? 'badge-danger' : 'badge-muted') ?>"><?= htmlspecialchars($log['status']) ?></span>
+          <?php $logBadge = match ($log['status']) {
+              'success' => 'badge-success',
+              'error' => 'badge-danger',
+              'warning' => 'badge-warn',
+              default => 'badge-muted',
+          }; ?>
+          <span class="badge <?= $logBadge ?>"><?= htmlspecialchars($log['status']) ?></span>
           <?php if (!empty($log['message'])): ?> · <?= htmlspecialchars($log['message']) ?><?php endif; ?>
         </div>
       <?php endforeach; ?>

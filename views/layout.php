@@ -14,6 +14,8 @@ $navItems = [
     'redirects' => ['label' => 'Chuyển hướng 301', 'href' => '/redirects.php'],
     'wordpress' => ['label' => 'Cấu hình website', 'href' => '/wordpress.php'],
     'manage-sites' => ['label' => 'Quản lý website', 'href' => '/manage-sites.php'],
+    'security' => ['label' => 'Bảo mật', 'href' => '/security.php'],
+    'ssl' => ['label' => 'SSL & Domain', 'href' => '/ssl.php'],
     'vps' => ['label' => 'VPS', 'href' => '/vps.php'],
     'settings' => ['label' => 'Cài đặt', 'href' => '/settings.php'],
 ];

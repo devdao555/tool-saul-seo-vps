@@ -8,10 +8,12 @@ class DomainRepository
 {
     public static function all(): array
     {
-        $sql = 'SELECT d.*, c.label AS cf_account_label, v.label AS vps_label
+        $sql = 'SELECT d.*, c.label AS cf_account_label, v.label AS vps_label,
+                       s.status AS security_status, s.scanned_at AS security_scanned_at
                 FROM domains d
                 LEFT JOIN cf_accounts c ON c.id = d.cf_account_id
                 LEFT JOIN vps v ON v.id = d.vps_id
+                LEFT JOIN security_scans s ON s.domain = d.domain
                 ORDER BY d.domain';
         return Database::connection()->query($sql)->fetchAll();
     }

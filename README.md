@@ -10,6 +10,10 @@ Viết bằng **PHP thuần, không Composer, không framework** — chỉ cần
 - **Chuyển hướng 301**: tạo/xoá Cloudflare Page Rules để redirect hàng loạt domain nguồn về 1 domain đích.
 - **Cấu hình website**: tạo WordPress trắng hoặc clone WordPress sang domain khác, trên VPS bất kỳ trong danh sách.
 - **Quản lý website**: xoá site (kèm xoá DNS Cloudflare), đổi mật khẩu admin WordPress, clear cache.
+- **Bảo mật**: scan mã độc/webshell — theo domain cụ thể hoặc quét toàn bộ site tìm thấy trên 1 VPS, kết hợp `wp core verify-checksums` (so khớp core với WordPress.org) và heuristic grep (pattern webshell/backdoor phổ biến). Lưu lịch sử scan, hiển thị badge bảo mật ngay trong danh sách domain.
+- **SSL & Domain**: check hạn SSL + HTTP→HTTPS redirect (không cần VPS, check trực tiếp qua cổng 443), renew SSL qua SSH (certbot/acme.sh best-effort), check hạn đăng ký domain (qua Namecheap API).
+- **VPS**: thêm/xoá VPS, kiểm tra CPU/RAM/Disk/Load + trạng thái nginx/mysql/redis/php-fpm (từng VPS hoặc tất cả cùng lúc), restart nhanh 1 trong 4 dịch vụ đó (whitelist cố định, không nhận tên dịch vụ tuỳ ý).
+- **Cloudflare nâng cao**: purge cache, bật/tắt proxy (mây cam) hàng loạt, push DNS hỗ trợ cả AAAA (IPv6), scan DNS toàn hệ thống để phát hiện domain thiếu record hoặc IP lệch so với VPS đã gán.
 - **Cài đặt**: quản lý nhiều Cloudflare account, cấu hình Namecheap API, quản lý danh sách VPS.
 - Toàn bộ hành động được ghi log trong "Log hệ thống".
 
@@ -67,7 +71,26 @@ Vhost Nginx và lệnh tạo site được tool tự sinh (`src/Vps/WordPressMan
 
 Đây là quy ước ổn định trên hầu hết bản aaPanel, nhưng **hãy test trên 1 domain thử trước** khi dùng hàng loạt trên VPS production, vì cấu hình chi tiết (OpenLiteSpeed thay vì Nginx, custom PHP path, v.v.) có thể khác tuỳ server. Có thể chỉnh sửa template trong `nginxVhost()` nếu cần.
 
-## Bảo mật
+## Lưu ý quan trọng về module Bảo mật (quét mã độc)
+
+`src/Vps/SecurityScanner.php` chỉ làm 2 việc, cả hai đều **best-effort**, không phải antivirus:
+
+1. `wp core verify-checksums` — so khớp core WordPress với bản gốc trên WordPress.org qua mạng. Thoát khác 0 có thể do file bị sửa, **hoặc** do VPS không ra được internet, **hoặc** bản WP không có trong checksum DB — luôn xem "Xem chi tiết" trước khi kết luận.
+2. Grep heuristic tìm pattern webshell/backdoor phổ biến (`eval(base64_decode(...`, gọi hàm động từ `$_GET/$_POST`, tên file kiểu `c99.php`/`r57.php`/`wso.php`...). Có thể bỏ sót mã độc được obfuscate kỹ, hoặc báo nhầm code hợp lệ trùng pattern.
+
+Chỉ scan được domain đã gắn VPS trong hệ thống (mục "Scan theo domain"), hoặc mọi thư mục tìm thấy trong webroot của 1 VPS (mục "Scan toàn bộ 1 VPS", kể cả domain chưa được tool quản lý). Kết quả nghi ngờ nên được admin tự kiểm tra file trước khi xoá — tool không tự động xoá file nghi ngờ.
+
+## Lưu ý về module VPS Monitoring / Restart dịch vụ
+
+`src/Vps/VpsMonitor.php` chỉ được phép restart 4 dịch vụ cố định: `nginx`, `mysql`, `redis`, `php-fpm` (tên service cụ thể tự dò theo `php_version` của từng VPS). Đây là whitelist cứng trong code — không có đường nào để restart một service tuỳ ý từ giao diện, kể cả khi sửa request. Trạng thái dịch vụ dựa trên `systemctl is-active`; VPS không dùng systemd sẽ luôn hiện "off" dù dịch vụ thật sự đang chạy.
+
+## Lưu ý về module SSL & Domain
+
+- Check SSL (cert + redirect) chạy trực tiếp từ server host tool, không qua SSH — hoạt động với bất kỳ domain public nào, không cần domain đó có trong danh sách VPS.
+- Renew SSL cần domain đã gắn VPS, và VPS đó phải có `certbot` hoặc `~/.acme.sh/acme.sh` — nếu aaPanel quản lý SSL bằng cách khác, renew sẽ báo "không tìm thấy", lúc đó vào giao diện aaPanel renew thủ công.
+- Check hạn domain chỉ đúng với domain đăng ký tại Namecheap (dùng chung cấu hình API với tính năng push NS).
+
+## Bảo mật hệ thống
 
 - API token, mật khẩu MySQL, Namecheap key được mã hoá (`AES-256-CBC`) bằng `APP_KEY` trước khi lưu vào SQLite.
 - SSH dùng key riêng cho tool, không dùng mật khẩu.
@@ -80,7 +103,7 @@ Vhost Nginx và lệnh tạo site được tool tự sinh (`src/Vps/WordPressMan
 
 ```
 public/       # document root — front controller cho từng trang + assets
-src/          # toàn bộ logic PHP (Support, Auth, Cloudflare, Namecheap, Vps, Controllers)
+src/          # toàn bộ logic PHP (Support, Auth, Cloudflare, Namecheap, Security, Ssl, Vps, Controllers)
 views/        # template HTML (PHP thuần, không blade/twig)
 database/     # schema.sql + script migrate
 storage/      # db.sqlite, ssh keys, logs (gitignored)

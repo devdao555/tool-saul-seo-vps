@@ -34,6 +34,39 @@ class Http
         return ['status' => $statusCode, 'body' => $responseBody];
     }
 
+    /**
+     * HEAD-style request that follows redirects, for checking where a URL ends up
+     * (e.g. does http:// redirect to https://) without downloading the response body.
+     */
+    public static function checkFollowRedirect(string $url, int $timeout = 10): array
+    {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => 5,
+            CURLOPT_TIMEOUT => $timeout,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_USERAGENT => 'SaulSeoTool/1.0',
+        ]);
+
+        $success = curl_exec($ch);
+        if ($success === false) {
+            $error = curl_error($ch);
+            curl_close($ch);
+            throw new \RuntimeException("HTTP request failed: {$error}");
+        }
+
+        $info = [
+            'status' => curl_getinfo($ch, CURLINFO_HTTP_CODE),
+            'effective_url' => curl_getinfo($ch, CURLINFO_EFFECTIVE_URL),
+        ];
+        curl_close($ch);
+
+        return $info;
+    }
+
     public static function json(string $method, string $url, array $headers, ?array $payload = null): array
     {
         $headers[] = 'Content-Type: application/json';
