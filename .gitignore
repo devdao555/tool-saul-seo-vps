@@ -1,0 +1,9 @@
+/.env
+/.claude/
+/storage/db.sqlite
+/storage/logs/*.log
+/storage/keys/*
+!/storage/keys/.gitkeep
+.DS_Store
+Thumbs.db
+*.swp
