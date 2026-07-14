@@ -31,6 +31,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 Flash::set('ok', 'Đã xoá Cloudflare account.');
                 break;
 
+            case 'bulk_add_cf_accounts':
+                $results = SettingsController::bulkAddCfAccounts((string) ($_POST['bulk_accounts'] ?? ''));
+                Flash::set('bulk_cf_results', $results);
+                break;
+
             case 'save_namecheap':
                 SettingsController::saveNamecheap(
                     (string) ($_POST['nc_api_user'] ?? ''),
@@ -56,6 +61,7 @@ $namecheap = [
 ];
 $ok = Flash::pull('ok');
 $error = Flash::pull('error');
+$bulkCfResults = Flash::pull('bulk_cf_results');
 
 $pageTitle = 'Cài đặt';
 $pageSub = 'Quản lý Cloudflare account, Namecheap API và VPS';

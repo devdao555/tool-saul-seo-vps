@@ -4,6 +4,7 @@ use App\Support\Csrf;
 
 /** @var array $cfAccounts */
 /** @var array $namecheap */
+/** @var array|null $bulkCfResults */
 /** @var string|null $ok */
 /** @var string|null $error */
 ?>
@@ -52,6 +53,21 @@ use App\Support\Csrf;
     </table>
   </div>
 
+  <div class="card">
+    <h2>Thêm hàng loạt Cloudflare Accounts</h2>
+    <p class="hint">Mỗi dòng 1 account, dạng <code>label|api_token|account_id</code> — dùng khi bạn quản lý nhiều account cùng lúc.</p>
+    <form method="post" action="/settings.php">
+      <?= Csrf::field() ?>
+      <input type="hidden" name="action" value="bulk_add_cf_accounts">
+      <label>Danh sách account</label>
+      <textarea name="bulk_accounts" placeholder="acc1@gmail.com|cf_token_xxx|account_id_xxx&#10;acc2@gmail.com|cf_token_yyy|account_id_yyy" required></textarea>
+      <button type="submit" class="btn btn-primary">Thêm hàng loạt</button>
+    </form>
+    <?php $results = $bulkCfResults; require __DIR__ . '/partials/result-table.php'; ?>
+  </div>
+</div>
+
+<div class="grid">
   <div class="card">
     <h2>Namecheap API</h2>
     <p class="hint">Dùng để tự trỏ NS. Nhớ whitelist IP server này ở Namecheap &gt; Profile &gt; Tools &gt; API Access.</p>

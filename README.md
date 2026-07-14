@@ -14,7 +14,7 @@ Viết bằng **PHP thuần, không Composer, không framework** — chỉ cần
 - **SSL & Domain**: check hạn SSL + HTTP→HTTPS redirect (không cần VPS, check trực tiếp qua cổng 443), renew SSL qua SSH (certbot/acme.sh best-effort), check hạn đăng ký domain (qua Namecheap API).
 - **VPS**: thêm/xoá VPS, kiểm tra CPU/RAM/Disk/Load + trạng thái nginx/mysql/redis/php-fpm (từng VPS hoặc tất cả cùng lúc), restart nhanh 1 trong 4 dịch vụ đó (whitelist cố định, không nhận tên dịch vụ tuỳ ý).
 - **Cloudflare nâng cao**: purge cache, bật/tắt proxy (mây cam) hàng loạt, push DNS hỗ trợ cả AAAA (IPv6), scan DNS toàn hệ thống để phát hiện domain thiếu record hoặc IP lệch so với VPS đã gán.
-- **Cài đặt**: quản lý nhiều Cloudflare account, cấu hình Namecheap API, quản lý danh sách VPS.
+- **Cài đặt**: quản lý nhiều Cloudflare account (thêm từng cái hoặc hàng loạt qua textarea `label|api_token|account_id`), cấu hình Namecheap API, quản lý danh sách VPS.
 - Toàn bộ hành động được ghi log trong "Log hệ thống".
 
 ## Yêu cầu
