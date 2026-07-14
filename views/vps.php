@@ -4,6 +4,7 @@ use App\Support\Csrf;
 
 /** @var array $vpsList */
 /** @var array $healthByVps */
+/** @var array|null $bulkVpsResults */
 /** @var string|null $ok */
 /** @var string|null $error */
 
@@ -55,6 +56,31 @@ $svcBadge = static function (?string $state): string {
       <textarea name="private_key" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" required></textarea>
       <button type="submit" class="btn btn-primary">+ Thêm VPS</button>
     </form>
+  </div>
+
+  <div class="card">
+    <h2>Thêm hàng loạt VPS</h2>
+    <p class="hint">Dùng khi nhiều VPS dùng chung 1 SSH key (khuyến nghị: tạo 1 key, add public key vào <code>authorized_keys</code> của tất cả VPS). Cấu hình chung điền 1 lần bên dưới, riêng Label/IP/MySQL password nhập theo danh sách.</p>
+    <form method="post" action="/vps.php">
+      <?= Csrf::field() ?>
+      <input type="hidden" name="action" value="bulk_add">
+      <label>SSH User (dùng chung)</label>
+      <input type="text" name="bulk_ssh_user" value="root">
+      <label>SSH Port (dùng chung)</label>
+      <input type="number" name="bulk_ssh_port" value="22">
+      <label>PHP Version (dùng chung, vd 81 cho PHP 8.1)</label>
+      <input type="text" name="bulk_php_version" value="81">
+      <label>Webroot base (dùng chung)</label>
+      <input type="text" name="bulk_webroot_base" value="/www/wwwroot">
+      <label>MySQL user (dùng chung, thường là root)</label>
+      <input type="text" name="bulk_mysql_user" value="root">
+      <label>SSH Private Key (dùng chung cho tất cả VPS bên dưới)</label>
+      <textarea name="bulk_private_key" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" required></textarea>
+      <label>Danh sách VPS — mỗi dòng: label|ip|mysql_password</label>
+      <textarea name="bulk_vps_lines" placeholder="VPS 01|103.2.226.244|mysqlpass1&#10;VPS 02|103.2.226.245|mysqlpass2" required></textarea>
+      <button type="submit" class="btn btn-primary">Thêm hàng loạt</button>
+    </form>
+    <?php $results = $bulkVpsResults; require __DIR__ . '/partials/result-table.php'; ?>
   </div>
 
   <div class="card">

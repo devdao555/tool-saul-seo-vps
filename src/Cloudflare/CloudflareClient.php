@@ -61,6 +61,23 @@ class CloudflareClient
         return $result[0] ?? null;
     }
 
+    /**
+     * Lists every zone visible to this token (paginated), for syncing domains that
+     * already exist on Cloudflare but weren't created through this tool.
+     */
+    public function listZones(): array
+    {
+        $zones = [];
+        $page = 1;
+        do {
+            $data = $this->call('GET', "/zones?per_page=50&page={$page}");
+            $zones = array_merge($zones, $data['result'] ?? []);
+            $totalPages = (int) ($data['result_info']['total_pages'] ?? 1);
+            $page++;
+        } while ($page <= $totalPages);
+        return $zones;
+    }
+
     public function deleteZone(string $zoneId): void
     {
         $this->call('DELETE', '/zones/' . $zoneId);

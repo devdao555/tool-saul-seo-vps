@@ -27,6 +27,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 Flash::set('ok', 'Đã xoá VPS khỏi hệ thống (không xoá gì trên VPS thật).');
                 break;
 
+            case 'bulk_add':
+                $results = VpsController::bulkAddVps([
+                    'ssh_user' => (string) ($_POST['bulk_ssh_user'] ?? 'root'),
+                    'ssh_port' => (int) ($_POST['bulk_ssh_port'] ?? 22),
+                    'php_version' => (string) ($_POST['bulk_php_version'] ?? '81'),
+                    'webroot_base' => (string) ($_POST['bulk_webroot_base'] ?? '/www/wwwroot'),
+                    'mysql_user' => (string) ($_POST['bulk_mysql_user'] ?? 'root'),
+                    'private_key' => (string) ($_POST['bulk_private_key'] ?? ''),
+                ], (string) ($_POST['bulk_vps_lines'] ?? ''));
+                Flash::set('bulk_vps_results', $results);
+                break;
+
             case 'check_health':
                 VpsController::checkHealth((int) ($_POST['id'] ?? 0));
                 Flash::set('ok', 'Đã kiểm tra tình trạng VPS.');
@@ -54,6 +66,7 @@ $vpsList = VpsRepository::all();
 $healthByVps = VpsHealthRepository::all();
 $ok = Flash::pull('ok');
 $error = Flash::pull('error');
+$bulkVpsResults = Flash::pull('bulk_vps_results');
 
 $pageTitle = 'VPS';
 $pageSub = 'Quản lý danh sách VPS dùng để dựng WordPress';

@@ -12,6 +12,7 @@ use App\Support\Csrf;
 /** @var array|null $purgeCacheResults */
 /** @var array|null $toggleProxyResults */
 /** @var array|null $scanDnsResults */
+/** @var array|null $syncCfResults */
 /** @var string|null $error */
 ?>
 
@@ -60,6 +61,17 @@ use App\Support\Csrf;
       <button type="submit" class="btn btn-ghost">Check NS</button>
     </form>
     <?php $results = $checkNsResults; require __DIR__ . '/partials/result-table.php'; ?>
+  </div>
+
+  <div class="card">
+    <h2>Đồng bộ domain từ Cloudflare</h2>
+    <p class="hint">Quét toàn bộ Cloudflare account đã thêm, lấy về mọi zone đang có (kể cả domain tạo trực tiếp trên Cloudflare, không qua tool này) và lưu vào danh sách bên dưới — để "Tổng số domain" khớp thực tế và Check NS/Push DNS dùng được luôn.</p>
+    <form method="post" action="/domains.php">
+      <?= Csrf::field() ?>
+      <input type="hidden" name="action" value="sync_cf">
+      <button type="submit" class="btn btn-primary" <?= empty($cfAccounts) ? 'disabled' : '' ?>>Đồng bộ ngay</button>
+    </form>
+    <?php $results = $syncCfResults; require __DIR__ . '/partials/result-table.php'; ?>
   </div>
 </div>
 

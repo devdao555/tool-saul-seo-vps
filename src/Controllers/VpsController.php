@@ -69,6 +69,47 @@ class VpsController
         Logger::log('vps', 'add', $ip, 'success', $label);
     }
 
+    /**
+     * Adds many VPS at once that share the same SSH key / SSH port / PHP version /
+     * webroot / MySQL user (the common case for a fleet provisioned the same way) —
+     * only label, IP, and MySQL password vary per line.
+     * Each line: "label|ip|mysql_password" (mysql_password may be omitted/blank).
+     */
+    public static function bulkAddVps(array $shared, string $rawLines): array
+    {
+        $results = [];
+        foreach (Validator::lines($rawLines) as $line) {
+            $parts = array_map('trim', explode('|', $line));
+            $label = ($parts[0] ?? '') !== '' ? $parts[0] : '(thiếu label)';
+
+            if (count($parts) < 2 || $parts[0] === '' || $parts[1] === '') {
+                $results[] = ['domain' => $label, 'ok' => false, 'error' => 'Định dạng phải là: label|ip|mysql_password (mysql_password có thể để trống).'];
+                continue;
+            }
+
+            [$vpsLabel, $ip] = $parts;
+            $mysqlPassword = $parts[2] ?? '';
+
+            try {
+                self::addVps([
+                    'label' => $vpsLabel,
+                    'ip' => $ip,
+                    'ssh_user' => $shared['ssh_user'],
+                    'ssh_port' => $shared['ssh_port'],
+                    'php_version' => $shared['php_version'],
+                    'webroot_base' => $shared['webroot_base'],
+                    'mysql_user' => $shared['mysql_user'],
+                    'mysql_password' => $mysqlPassword,
+                    'private_key' => $shared['private_key'],
+                ]);
+                $results[] = ['domain' => $vpsLabel, 'ok' => true];
+            } catch (\Throwable $e) {
+                $results[] = ['domain' => $vpsLabel, 'ok' => false, 'error' => $e->getMessage()];
+            }
+        }
+        return $results;
+    }
+
     public static function deleteVps(int $id): void
     {
         $vps = VpsRepository::find($id);

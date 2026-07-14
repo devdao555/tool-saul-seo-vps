@@ -59,4 +59,37 @@ class DomainController
         }
         return $results;
     }
+
+    /**
+     * Imports zones that already exist on Cloudflare (created outside this tool) into the
+     * local `domains` table, so "Tổng số domain" and Check NS/DNS actions work for them too.
+     * Runs across every configured Cloudflare account.
+     */
+    public static function syncFromCloudflare(): array
+    {
+        $results = [];
+        foreach (CfAccountRepository::all() as $account) {
+            $client = CfAccountRepository::clientFor((int) $account['id']);
+            try {
+                $zones = $client->listZones();
+                foreach ($zones as $zone) {
+                    $ns = $zone['name_servers'] ?? [];
+                    DomainRepository::upsertZone(
+                        $zone['name'],
+                        (int) $account['id'],
+                        $zone['id'],
+                        $zone['status'] ?? 'unknown',
+                        $ns[0] ?? null,
+                        $ns[1] ?? null
+                    );
+                }
+                Logger::log('cloudflare', 'sync', $account['label'], 'success', count($zones) . ' zone(s)');
+                $results[] = ['domain' => $account['label'], 'ok' => true, 'count' => count($zones)];
+            } catch (\Throwable $e) {
+                Logger::log('cloudflare', 'sync', $account['label'], 'error', $e->getMessage());
+                $results[] = ['domain' => $account['label'], 'ok' => false, 'error' => $e->getMessage()];
+            }
+        }
+        return $results;
+    }
 }

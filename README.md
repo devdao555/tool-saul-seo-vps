@@ -6,13 +6,13 @@ Viết bằng **PHP thuần, không Composer, không framework** — chỉ cần
 
 ## Tính năng
 
-- **Tên miền & DNS**: thêm domain (tạo zone Cloudflare, trả về NS), check NS/trạng thái, push NS sang Namecheap, push DNS (A + CNAME www), xoá DNS.
+- **Tên miền & DNS**: thêm domain (tạo zone Cloudflare, trả về NS), check NS/trạng thái, push NS sang Namecheap, push DNS (A + CNAME www), xoá DNS, **đồng bộ domain có sẵn từ mọi Cloudflare account đã thêm** (import zone tạo ngoài tool vào danh sách quản lý).
 - **Chuyển hướng 301**: tạo/xoá Cloudflare Page Rules để redirect hàng loạt domain nguồn về 1 domain đích.
 - **Cấu hình website**: tạo WordPress trắng hoặc clone WordPress sang domain khác, trên VPS bất kỳ trong danh sách.
 - **Quản lý website**: xoá site (kèm xoá DNS Cloudflare), đổi mật khẩu admin WordPress, clear cache.
 - **Bảo mật**: scan mã độc/webshell — theo domain cụ thể hoặc quét toàn bộ site tìm thấy trên 1 VPS, kết hợp `wp core verify-checksums` (so khớp core với WordPress.org) và heuristic grep (pattern webshell/backdoor phổ biến). Lưu lịch sử scan, hiển thị badge bảo mật ngay trong danh sách domain.
 - **SSL & Domain**: check hạn SSL + HTTP→HTTPS redirect (không cần VPS, check trực tiếp qua cổng 443), renew SSL qua SSH (certbot/acme.sh best-effort), check hạn đăng ký domain (qua Namecheap API).
-- **VPS**: thêm/xoá VPS, kiểm tra CPU/RAM/Disk/Load + trạng thái nginx/mysql/redis/php-fpm (từng VPS hoặc tất cả cùng lúc), restart nhanh 1 trong 4 dịch vụ đó (whitelist cố định, không nhận tên dịch vụ tuỳ ý).
+- **VPS**: thêm/xoá VPS (từng cái hoặc hàng loạt — bulk chia sẻ 1 SSH key + cấu hình chung, chỉ Label/IP/MySQL password khác nhau theo dòng), kiểm tra CPU/RAM/Disk/Load + trạng thái nginx/mysql/redis/php-fpm (từng VPS hoặc tất cả cùng lúc), restart nhanh 1 trong 4 dịch vụ đó (whitelist cố định, không nhận tên dịch vụ tuỳ ý).
 - **Cloudflare nâng cao**: purge cache, bật/tắt proxy (mây cam) hàng loạt, push DNS hỗ trợ cả AAAA (IPv6), scan DNS toàn hệ thống để phát hiện domain thiếu record hoặc IP lệch so với VPS đã gán.
 - **Cài đặt**: quản lý nhiều Cloudflare account (thêm từng cái hoặc hàng loạt qua textarea `label|api_token|account_id`), cấu hình Namecheap API, quản lý danh sách VPS.
 - Toàn bộ hành động được ghi log trong "Log hệ thống".

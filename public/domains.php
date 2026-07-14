@@ -65,6 +65,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 $results = DnsController::scanDnsHealth();
                 Flash::set('scan_dns_results', $results);
                 break;
+
+            case 'sync_cf':
+                $results = DomainController::syncFromCloudflare();
+                Flash::set('sync_cf_results', $results);
+                break;
         }
     } catch (\Throwable $e) {
         Flash::set('error', $e->getMessage());
@@ -85,6 +90,7 @@ $pushNsResults = Flash::pull('push_ns_results');
 $purgeCacheResults = Flash::pull('purge_cache_results');
 $toggleProxyResults = Flash::pull('toggle_proxy_results');
 $scanDnsResults = Flash::pull('scan_dns_results');
+$syncCfResults = Flash::pull('sync_cf_results');
 $error = Flash::pull('error');
 
 $pageTitle = 'Tên miền & DNS';
