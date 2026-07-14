@@ -27,6 +27,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 Flash::set('ok', 'Đã xoá VPS khỏi hệ thống (không xoá gì trên VPS thật).');
                 break;
 
+            case 'bootstrap_ssh':
+                $bootstrapResult = VpsController::bulkBootstrapSsh(
+                    (string) ($_POST['bootstrap_ssh_user'] ?? 'root'),
+                    (int) ($_POST['bootstrap_ssh_port'] ?? 22),
+                    (string) ($_POST['bootstrap_lines'] ?? '')
+                );
+                Flash::set('bootstrap_result', $bootstrapResult);
+                break;
+
             case 'bulk_add':
                 $results = VpsController::bulkAddVps([
                     'ssh_user' => (string) ($_POST['bulk_ssh_user'] ?? 'root'),
@@ -67,6 +76,7 @@ $healthByVps = VpsHealthRepository::all();
 $ok = Flash::pull('ok');
 $error = Flash::pull('error');
 $bulkVpsResults = Flash::pull('bulk_vps_results');
+$bootstrapResult = Flash::pull('bootstrap_result');
 
 $pageTitle = 'VPS';
 $pageSub = 'Quản lý danh sách VPS dùng để dựng WordPress';

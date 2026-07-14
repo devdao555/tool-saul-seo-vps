@@ -52,18 +52,38 @@ class SshClient
         ];
         $command = implode(' ', array_map('escapeshellarg', $sshArgs));
 
+        return self::execute($command, $bashScript, [], $timeout);
+    }
+
+    /**
+     * Runs an arbitrary shell command via proc_open, optionally feeding stdin and/or
+     * overriding/adding environment variables for the child process. Shared by the
+     * key-based path above and by SshBootstrap's password-based path (which needs
+     * SSHPASS in the environment rather than a key file).
+     */
+    public static function execute(string $command, ?string $stdin, array $extraEnv = [], int $timeout = 180): SshResult
+    {
         $descriptors = [
             0 => ['pipe', 'r'],
             1 => ['pipe', 'w'],
             2 => ['pipe', 'w'],
         ];
 
-        $process = proc_open($command, $descriptors, $pipes);
-        if (!is_resource($process)) {
-            throw new \RuntimeException('Không khởi động được tiến trình ssh.');
+        // proc_open replaces the whole child environment when $env is non-null, so merge
+        // with the current process env (keeps PATH etc.) instead of passing extraEnv alone.
+        $env = null;
+        if (!empty($extraEnv)) {
+            $env = array_merge(getenv() ?: [], $extraEnv);
         }
 
-        fwrite($pipes[0], $bashScript);
+        $process = proc_open($command, $descriptors, $pipes, null, $env);
+        if (!is_resource($process)) {
+            throw new \RuntimeException('Không khởi động được tiến trình.');
+        }
+
+        if ($stdin !== null) {
+            fwrite($pipes[0], $stdin);
+        }
         fclose($pipes[0]);
 
         stream_set_blocking($pipes[1], false);

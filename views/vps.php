@@ -5,6 +5,7 @@ use App\Support\Csrf;
 /** @var array $vpsList */
 /** @var array $healthByVps */
 /** @var array|null $bulkVpsResults */
+/** @var array|null $bootstrapResult */
 /** @var string|null $ok */
 /** @var string|null $error */
 
@@ -30,6 +31,29 @@ $svcBadge = static function (?string $state): string {
 <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 
 <div class="grid">
+  <div class="card">
+    <h2>Bootstrap SSH key hàng loạt</h2>
+    <p class="hint">Dùng khi VPS chỉ có SSH <strong>password</strong> (chưa có key). Tool sẽ tạo 1 SSH key mới, đăng nhập bằng password hiện có <strong>đúng 1 lần</strong> để cài key đó vào từng VPS — sau đó dùng key này với "Thêm hàng loạt VPS" bên dưới, không cần password nữa. Cần cài <code>sshpass</code> trên VPS đang chạy tool (<code>apt install -y sshpass</code>).</p>
+    <form method="post" action="/vps.php">
+      <?= Csrf::field() ?>
+      <input type="hidden" name="action" value="bootstrap_ssh">
+      <label>SSH User (dùng chung)</label>
+      <input type="text" name="bootstrap_ssh_user" value="root">
+      <label>SSH Port (dùng chung)</label>
+      <input type="number" name="bootstrap_ssh_port" value="22">
+      <label>Danh sách VPS — mỗi dòng: ip|ssh_password</label>
+      <textarea name="bootstrap_lines" placeholder="103.2.226.244|MatKhauSshHienTai1&#10;103.2.226.245|MatKhauSshHienTai2" required></textarea>
+      <button type="submit" class="btn btn-primary">Cài SSH key hàng loạt</button>
+    </form>
+    <?php if (!empty($bootstrapResult)): ?>
+      <div class="alert alert-warn" style="margin-top:16px;">
+        SSH Private Key vừa tạo — <strong>copy ngay</strong>, chỉ hiện 1 lần, dùng cho form "Thêm hàng loạt VPS" bên dưới:
+      </div>
+      <textarea readonly onclick="this.select()" style="font-size:12px;"><?= htmlspecialchars($bootstrapResult['private_key']) ?></textarea>
+      <?php $results = $bootstrapResult['results']; require __DIR__ . '/partials/result-table.php'; ?>
+    <?php endif; ?>
+  </div>
+
   <div class="card">
     <h2>Thêm VPS</h2>
     <p class="hint">VPS cần đã cài sẵn aaPanel + Nginx + PHP-FPM + MySQL + WP-CLI. SSH dùng key (không mật khẩu) — thêm public key tương ứng vào <code>authorized_keys</code> của VPS trước.</p>

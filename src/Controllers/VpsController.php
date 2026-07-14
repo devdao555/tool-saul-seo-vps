@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Support\Env;
 use App\Support\Logger;
 use App\Support\Validator;
+use App\Vps\SshBootstrap;
 use App\Vps\VpsHealthRepository;
 use App\Vps\VpsMonitor;
 use App\Vps\VpsRepository;
@@ -110,6 +111,45 @@ class VpsController
         return $results;
     }
 
+    /**
+     * One-time onboarding for VPS that only have SSH password auth: generates a fresh
+     * keypair, uses each VPS's existing password once to install the new public key, and
+     * returns the private key for the admin to use in bulkAddVps()/addVps() afterwards.
+     * Each line: "ip|ssh_password".
+     */
+    public static function bulkBootstrapSsh(string $sshUser, int $sshPort, string $rawLines): array
+    {
+        $keypair = SshBootstrap::generateKeypair();
+        $bootstrap = new SshBootstrap($sshUser, $sshPort);
+
+        $results = [];
+        foreach (Validator::lines($rawLines) as $line) {
+            $parts = array_map('trim', explode('|', $line));
+            $ipLabel = ($parts[0] ?? '') !== '' ? $parts[0] : '(thiếu IP)';
+
+            if (count($parts) < 2 || $parts[0] === '' || $parts[1] === '') {
+                $results[] = ['domain' => $ipLabel, 'ok' => false, 'error' => 'Định dạng phải là: ip|ssh_password.'];
+                continue;
+            }
+
+            [$ip, $sshPassword] = $parts;
+
+            try {
+                $result = $bootstrap->installKey($ip, $sshPassword, $keypair['public']);
+                if (!str_contains($result->stdout, 'SAUL_BOOTSTRAP_OK')) {
+                    throw new \RuntimeException(self::tail($result->stderr . "\n" . $result->stdout));
+                }
+                Logger::log('vps', 'bootstrap_ssh', $ip, 'success');
+                $results[] = ['domain' => $ip, 'ok' => true];
+            } catch (\Throwable $e) {
+                Logger::log('vps', 'bootstrap_ssh', $ip, 'error', $e->getMessage());
+                $results[] = ['domain' => $ip, 'ok' => false, 'error' => $e->getMessage()];
+            }
+        }
+
+        return ['private_key' => $keypair['private'], 'public_key' => $keypair['public'], 'results' => $results];
+    }
+
     public static function deleteVps(int $id): void
     {
         $vps = VpsRepository::find($id);
@@ -164,5 +204,14 @@ class VpsController
             throw new \RuntimeException("Restart {$serviceKey} thất bại: " . trim($result->stderr . ' ' . $result->stdout));
         }
         Logger::log('vps', 'restart_service', $vps['ip'], 'success', $serviceKey);
+    }
+
+    private static function tail(string $text, int $maxLen = 400): string
+    {
+        $text = trim($text);
+        if (strlen($text) <= $maxLen) {
+            return $text !== '' ? $text : 'Không có thông báo lỗi.';
+        }
+        return '...' . substr($text, -$maxLen);
     }
 }
