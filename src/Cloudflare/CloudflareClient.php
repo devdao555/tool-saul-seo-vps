@@ -42,6 +42,16 @@ class CloudflareClient
     }
 
     /**
+     * Lightweight check that the API token itself is valid, without listing or touching
+     * any zone — safe to call per-account when diagnosing auth failures.
+     */
+    public function verifyToken(): array
+    {
+        $data = $this->call('GET', '/user/tokens/verify');
+        return $data['result'] ?? [];
+    }
+
+    /**
      * Creates a zone for the domain under the given Cloudflare account and returns the assigned nameservers.
      */
     public function createZone(string $domain, string $accountId, bool $jumpStart = false): array
@@ -149,6 +159,21 @@ class CloudflareClient
         return $result;
     }
 
+    /**
+     * Create a DNS record for $name, or update the existing one if a record of the same
+     * type + name already exists in the zone. Used for arbitrary hostnames (subdomains),
+     * so re-running the same line is idempotent instead of creating duplicates.
+     */
+    public function upsertDnsRecord(string $zoneId, string $type, string $name, string $content, bool $proxied = true): array
+    {
+        foreach ($this->listDnsRecords($zoneId) as $record) {
+            if ($record['type'] === $type && $record['name'] === $name) {
+                return $this->updateDnsRecord($zoneId, $record['id'], $type, $name, $content, $proxied);
+            }
+        }
+        return $this->createDnsRecord($zoneId, $type, $name, $content, $proxied);
+    }
+
     /** @deprecated use pushIpRecordWithWww($zoneId, $domain, $ip, 'A', $proxied) */
     public function pushARecordWithWww(string $zoneId, string $domain, string $ip, bool $proxied = true): array
     {
@@ -193,6 +218,22 @@ class CloudflareClient
             $this->deleteDnsRecord($zoneId, $record['id']);
         }
         return count($records);
+    }
+
+    /**
+     * Delete every DNS record whose name matches $name exactly (all types), for removing a
+     * single subdomain without touching the rest of the zone. Returns how many were deleted.
+     */
+    public function deleteDnsRecordsByName(string $zoneId, string $name): int
+    {
+        $deleted = 0;
+        foreach ($this->listDnsRecords($zoneId) as $record) {
+            if ($record['name'] === $name) {
+                $this->deleteDnsRecord($zoneId, $record['id']);
+                $deleted++;
+            }
+        }
+        return $deleted;
     }
 
     public function listPageRules(string $zoneId): array

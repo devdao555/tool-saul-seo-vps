@@ -38,6 +38,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 Flash::set('push_dns_results', $results);
                 break;
 
+            case 'push_subdomain':
+                $results = DnsController::pushSubdomains((string) ($_POST['subdomain_lines'] ?? ''), !empty($_POST['sub_proxied']));
+                Flash::set('push_subdomain_results', $results);
+                break;
+
+            case 'delete_subdomain':
+                $results = DnsController::deleteSubdomains((string) ($_POST['subdomain_delete_lines'] ?? ''));
+                Flash::set('delete_subdomain_results', $results);
+                break;
+
             case 'delete_dns':
                 $results = DnsController::deleteDns((string) ($_POST['domains_delete_dns'] ?? ''));
                 Flash::set('delete_dns_results', $results);
@@ -85,6 +95,8 @@ $domains = DomainRepository::all();
 $addZoneResults = Flash::pull('add_zone_results');
 $checkNsResults = Flash::pull('check_ns_results');
 $pushDnsResults = Flash::pull('push_dns_results');
+$pushSubdomainResults = Flash::pull('push_subdomain_results');
+$deleteSubdomainResults = Flash::pull('delete_subdomain_results');
 $deleteDnsResults = Flash::pull('delete_dns_results');
 $pushNsResults = Flash::pull('push_ns_results');
 $purgeCacheResults = Flash::pull('purge_cache_results');

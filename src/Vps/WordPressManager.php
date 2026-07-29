@@ -121,6 +121,107 @@ BASH;
         return $this->run($script);
     }
 
+    /**
+     * Provision a fresh WordPress install and layer a theme + plugin stack on top of it, so you
+     * can rebuild a site whose front-end you fingerprinted (e.g. from an external live site) but
+     * whose files/DB you don't have server access to.
+     *
+     * All theme/plugin ZIPs are installed from URLs that YOU supply and that the VPS can reach —
+     * this method never sources anything itself. Use it with license-holding copies of premium
+     * themes/plugins; free ones can be pulled from the wp.org repo by slug via $pluginSlugs.
+     *
+     * @param string[] $themeZips     ZIP URLs to install as themes (e.g. Flatsome parent + child).
+     * @param string   $activateTheme Theme slug to activate after install (e.g. 'themeweb' child).
+     * @param string[] $pluginSlugs   wp.org plugin slugs, installed + activated (free plugins).
+     * @param string[] $pluginZips    ZIP URLs, installed + activated (premium plugins you own).
+     * @param string   $demoXmlUrl    Optional WordPress WXR (.xml) export URL to import as content.
+     * @param string   $wpressUrl     Optional All-in-One WP Migration (.wpress) archive URL. This is
+     *                                a FULL site (files + DB); restoring it produces a 1:1 clone and
+     *                                makes the theme/plugin/XML params above redundant.
+     */
+    public function createSiteFromTemplate(
+        string $domain,
+        string $adminUser,
+        string $adminPass,
+        string $adminEmail,
+        array $themeZips,
+        string $activateTheme,
+        array $pluginSlugs = [],
+        array $pluginZips = [],
+        string $demoXmlUrl = '',
+        string $wpressUrl = ''
+    ): SshResult {
+        $this->assertDomain($domain);
+        if (!Validator::isSafeUsername($adminUser)) {
+            throw new \InvalidArgumentException('Username admin không hợp lệ.');
+        }
+        if ($activateTheme !== '' && !preg_match('/^[a-z0-9_-]+$/i', $activateTheme)) {
+            throw new \InvalidArgumentException('Theme slug không hợp lệ.');
+        }
+
+        $webroot = $this->webroot($domain);
+        $path = $this->q($webroot);
+
+        $blank = $this->createBlankSite($domain, $adminUser, $adminPass, $adminEmail);
+        if (!$blank->ok()) {
+            return $blank;
+        }
+
+        $steps = [];
+        foreach ($themeZips as $zip) {
+            $steps[] = 'wp theme install ' . $this->q($this->assertUrl($zip)) . " --force --allow-root --path={$path}";
+        }
+        if ($activateTheme !== '') {
+            $steps[] = 'wp theme activate ' . $this->q($activateTheme) . " --allow-root --path={$path}";
+        }
+        foreach ($pluginSlugs as $slug) {
+            if (!preg_match('/^[a-z0-9_-]+$/i', $slug)) {
+                throw new \InvalidArgumentException("Plugin slug không hợp lệ: {$slug}");
+            }
+            $steps[] = 'wp plugin install ' . $this->q($slug) . " --activate --allow-root --path={$path}";
+        }
+        foreach ($pluginZips as $zip) {
+            $steps[] = 'wp plugin install ' . $this->q($this->assertUrl($zip)) . " --activate --force --allow-root --path={$path}";
+        }
+        if ($demoXmlUrl !== '') {
+            $tmpXml = '/tmp/saul-demo-' . substr(md5($domain), 0, 8) . '.xml';
+            $steps[] = "wp plugin install wordpress-importer --activate --allow-root --path={$path}";
+            $steps[] = 'curl -fsSL ' . $this->q($this->assertUrl($demoXmlUrl)) . ' -o ' . $this->q($tmpXml);
+            $steps[] = "wp import {$this->q($tmpXml)} --authors=create --allow-root --path={$path}";
+            $steps[] = "rm -f {$this->q($tmpXml)}";
+        }
+        if ($wpressUrl !== '') {
+            // All-in-One WP Migration: drop the .wpress into its backups dir, then restore it.
+            // Restore overwrites files + DB and auto-rewrites the source URL to this site's URL.
+            $backupDir = $webroot . '/wp-content/ai1wm-backups';
+            $archive = 'saul-restore-' . substr(md5($domain), 0, 8) . '.wpress';
+            $steps[] = "wp plugin install all-in-one-wp-migration --activate --allow-root --path={$path}";
+            $steps[] = 'mkdir -p ' . $this->q($backupDir);
+            $steps[] = 'curl -fsSL ' . $this->q($this->assertUrl($wpressUrl)) . ' -o ' . $this->q($backupDir . '/' . $archive);
+            $steps[] = "wp ai1wm restore {$this->q($archive)} --yes --allow-root --path={$path}";
+            $steps[] = 'rm -f ' . $this->q($backupDir . '/' . $archive);
+        }
+        $stepsScript = implode("\n", $steps);
+
+        $script = <<<BASH
+set -e
+{$stepsScript}
+chown -R www:www {$path} || true
+echo "SAUL_TOOL_OK"
+BASH;
+
+        return $this->run($script);
+    }
+
+    private function assertUrl(string $url): string
+    {
+        $url = trim($url);
+        if (!preg_match('#^https?://#i', $url) || filter_var($url, FILTER_VALIDATE_URL) === false) {
+            throw new \InvalidArgumentException("URL không hợp lệ: {$url}");
+        }
+        return $url;
+    }
+
     public function cloneSite(string $sourceDomain, string $targetDomain, bool $closeIndexing = false): SshResult
     {
         $this->assertDomain($sourceDomain);
@@ -243,9 +344,65 @@ BASH;
         return $this->run($script);
     }
 
-    private function run(string $script): SshResult
+    /**
+     * Pushes the bundled SAUL AI Writer plugin (storage/plugins/saul-ai-writer) onto a site,
+     * activates it, and writes its settings + keyword queue via WP-CLI. Also registers a
+     * system crontab entry that runs due WP-Cron events every 10 minutes, because brand-new
+     * sites have no visitors so WP-Cron would otherwise never fire.
+     *
+     * @param array    $settings saul_aiw_settings option payload (provider, api_key, model...)
+     * @param string[] $keywords appended (deduped) to the site's existing queue, not replacing it
+     */
+    public function deployAiWriter(string $domain, array $settings, array $keywords, bool $runNow = false): SshResult
+    {
+        $this->assertDomain($domain);
+
+        $pluginFile = ROOT_PATH . '/storage/plugins/saul-ai-writer/saul-ai-writer.php';
+        $source = @file_get_contents($pluginFile);
+        if ($source === false) {
+            throw new \RuntimeException('Không tìm thấy file plugin: storage/plugins/saul-ai-writer/saul-ai-writer.php');
+        }
+
+        $webroot = $this->webroot($domain);
+        $path = $this->q($webroot);
+        $pluginDir = $this->q($webroot . '/wp-content/plugins/saul-ai-writer');
+        $pluginDest = $this->q($webroot . '/wp-content/plugins/saul-ai-writer/saul-ai-writer.php');
+        // Base64 keeps the plugin source (quotes, $vars, heredocs) intact through SSH stdin.
+        $b64 = base64_encode($source);
+        $settingsJson = json_encode($settings, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $steps = [];
+        $steps[] = "mkdir -p {$pluginDir}";
+        $steps[] = "echo {$this->q($b64)} | base64 -d > {$pluginDest}";
+        $steps[] = "wp plugin activate saul-ai-writer --allow-root --path={$path}";
+        $steps[] = "wp option update saul_aiw_settings {$this->q($settingsJson)} --format=json --allow-root --path={$path}";
+        if (!empty($keywords)) {
+            $steps[] = "wp saul-aiw add {$this->q(implode("\n", $keywords))} --allow-root --path={$path}";
+        }
+
+        // Crontab entry keyed on the webroot so re-deploying replaces instead of duplicating.
+        $cronCmd = "cd {$webroot} && wp cron event run --due-now --allow-root >/dev/null 2>&1";
+        $steps[] = '( { crontab -l 2>/dev/null | grep -vF ' . $this->q($cronCmd) . ' || true; } ; echo ' . $this->q('*/10 * * * * ' . $cronCmd) . ' ) | crontab -';
+
+        if ($runNow) {
+            $steps[] = "wp saul-aiw run --count=1 --allow-root --path={$path}";
+        }
+        $stepsScript = implode("\n", $steps);
+
+        $script = <<<BASH
+set -e
+{$stepsScript}
+chown -R www:www {$pluginDir} || true
+echo "SAUL_TOOL_OK"
+BASH;
+
+        // Writing a post can take a couple of AI API round-trips; give it headroom.
+        return $this->run($script, $runNow ? 420 : 180);
+    }
+
+    private function run(string $script, int $timeout = 180): SshResult
     {
         $ssh = SshClient::forVps($this->vps);
-        return $ssh->runScript($script);
+        return $ssh->runScript($script, $timeout);
     }
 }

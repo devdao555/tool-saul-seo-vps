@@ -1,9 +1,11 @@
 /.env
 /.claude/
+/db.sqlite
 /storage/db.sqlite
 /storage/logs/*.log
 /storage/keys/*
 !/storage/keys/.gitkeep
+/storage/plugins/
 .DS_Store
 Thumbs.db
 *.swp

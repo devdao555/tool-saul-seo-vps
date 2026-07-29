@@ -7,6 +7,8 @@ use App\Support\Csrf;
 /** @var array|null $addZoneResults */
 /** @var array|null $checkNsResults */
 /** @var array|null $pushDnsResults */
+/** @var array|null $pushSubdomainResults */
+/** @var array|null $deleteSubdomainResults */
 /** @var array|null $deleteDnsResults */
 /** @var array|null $pushNsResults */
 /** @var array|null $purgeCacheResults */
@@ -104,6 +106,36 @@ use App\Support\Csrf;
       <button type="submit" class="btn btn-primary">Chạy Cloudflare DNS</button>
     </form>
     <?php $results = $pushDnsResults; require __DIR__ . '/partials/result-table.php'; ?>
+  </div>
+
+  <div class="card">
+    <h2>Push Subdomain</h2>
+    <p class="hint">Mỗi dòng: <code>sub.domain.com TARGET</code>. TARGET là IPv4/IPv6 → tạo A/AAAA; là hostname → tạo CNAME. Tạo/cập nhật đúng 1 record cho subdomain đó, zone tự tra từ domain gốc.</p>
+    <form method="post" action="/domains.php">
+      <?= Csrf::field() ?>
+      <input type="hidden" name="action" value="push_subdomain">
+      <label>Danh sách subdomain + target</label>
+      <textarea name="subdomain_lines" placeholder="blog.abc.com 160.250.187.62&#10;shop.abc.com abc.com" required></textarea>
+      <div class="checkbox-row">
+        <input type="checkbox" name="sub_proxied" id="sub_proxied" value="1" checked>
+        <label for="sub_proxied" style="margin:0;">Bật Cloudflare Proxy (mây cam)</label>
+      </div>
+      <button type="submit" class="btn btn-primary">Tạo subdomain</button>
+    </form>
+    <?php $results = $pushSubdomainResults; require __DIR__ . '/partials/result-table.php'; ?>
+  </div>
+
+  <div class="card">
+    <h2>Xoá Subdomain</h2>
+    <p class="hint">Mỗi dòng 1 subdomain (vd: <code>blog.abc.com</code>) — xoá mọi record trùng đúng tên host đó, <strong>không</strong> đụng tới phần còn lại của domain.</p>
+    <form method="post" action="/domains.php" onsubmit="return confirm('Xoá các record của những subdomain này?');">
+      <?= Csrf::field() ?>
+      <input type="hidden" name="action" value="delete_subdomain">
+      <label>Danh sách subdomain</label>
+      <textarea name="subdomain_delete_lines" placeholder="blog.abc.com&#10;shop.abc.com" required></textarea>
+      <button type="submit" class="btn btn-danger">Xoá subdomain</button>
+    </form>
+    <?php $results = $deleteSubdomainResults; require __DIR__ . '/partials/result-table.php'; ?>
   </div>
 
   <div class="card">

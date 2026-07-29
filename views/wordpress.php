@@ -5,6 +5,9 @@ use App\Support\Csrf;
 /** @var array $vpsList */
 /** @var array|null $createResults */
 /** @var array|null $cloneResults */
+/** @var array|null $rebuildResults */
+/** @var array|null $aiResults */
+/** @var array $siteTemplates */
 /** @var string|null $error */
 ?>
 
@@ -64,6 +67,110 @@ use App\Support\Csrf;
     </form>
     <?php $results = $cloneResults; require __DIR__ . '/partials/result-table.php'; ?>
   </div>
+
+  <div class="card">
+    <h2>Dựng lại từ template (rebuild site đã scan)</h2>
+    <p class="hint">Dùng khi bạn scan một site bên ngoài và muốn dựng lại giao diện: tool cài WP trắng rồi cài theme + plugin từ các file ZIP bạn cung cấp URL. <strong>Bạn phải tự có bản license</strong> của theme/plugin premium — tool không tải hộ. Plugin miễn phí điền slug wp.org là được.</p>
+    <?php if (!empty($siteTemplates)): ?>
+      <div class="preset-row" style="margin-bottom:12px;">
+        <span class="hint" style="margin-right:6px;">Preset:</span>
+        <?php foreach ($siteTemplates as $key => $tpl): ?>
+          <button type="button" class="btn btn-ghost preset-btn"
+            data-activate-theme="<?= htmlspecialchars($tpl['activate_theme']) ?>"
+            data-plugin-slugs="<?= htmlspecialchars($tpl['plugin_slugs']) ?>"
+            data-theme-hint="<?= htmlspecialchars($tpl['theme_hint']) ?>"
+            data-plugin-zip-hint="<?= htmlspecialchars($tpl['plugin_zip_hint']) ?>">
+            <?= htmlspecialchars($tpl['label']) ?>
+          </button>
+        <?php endforeach; ?>
+      </div>
+    <?php endif; ?>
+    <form method="post" action="/wordpress.php" id="rebuild-form">
+      <?= Csrf::field() ?>
+      <input type="hidden" name="action" value="rebuild">
+      <label>Chọn VPS</label>
+      <select name="rebuild_vps_id" required>
+        <?php foreach ($vpsList as $v): ?>
+          <option value="<?= (int) $v['id'] ?>"><?= htmlspecialchars($v['label']) ?> — <?= htmlspecialchars($v['ip']) ?></option>
+        <?php endforeach; ?>
+      </select>
+      <label>Domain</label>
+      <input type="text" name="rebuild_domain" placeholder="newsite.com" required>
+      <label>Theme ZIP URLs (mỗi dòng 1 URL — parent trước, child sau)</label>
+      <textarea name="theme_zips" placeholder="https://yourhost.com/flatsome.zip&#10;https://yourhost.com/themeweb-child.zip"></textarea>
+      <label>Theme slug để kích hoạt</label>
+      <input type="text" name="activate_theme" placeholder="themeweb">
+      <label>Plugin miễn phí (slug wp.org, cách nhau bởi dấu phẩy)</label>
+      <input type="text" name="plugin_slugs" placeholder="woocommerce, contact-form-7, font-awesome-4-menus">
+      <label>Plugin premium ZIP URLs (mỗi dòng 1 URL)</label>
+      <textarea name="plugin_zips" placeholder="https://yourhost.com/advanced-product-fields-pro.zip"></textarea>
+      <label>Demo content XML URL (tuỳ chọn — file WordPress export .xml)</label>
+      <input type="text" name="demo_xml_url" placeholder="https://yourhost.com/agency7-demo.xml">
+      <label>File .wpress URL (All-in-One WP Migration — clone 1:1 cả file + database)</label>
+      <input type="text" name="wpress_url" placeholder="https://yourhost.com/agency7.wpress">
+      <p class="hint" style="margin-top:6px;">Nếu bạn có file <code>.wpress</code>, đây là cách clone <strong>giống 100%</strong>: tool cài All-in-One WP Migration rồi restore nguyên site. Khi đó các ô theme/plugin/XML ở trên là tuỳ chọn (không bắt buộc). Lưu ý: sau restore, tài khoản admin sẽ là của site gốc, không phải user/pass bạn nhập bên dưới.</p>
+      <label>Admin username</label>
+      <input type="text" name="rebuild_admin_user" value="admin">
+      <label>Admin password</label>
+      <input type="text" name="rebuild_admin_password" placeholder="Mật khẩu admin WP" required>
+      <label>Admin email</label>
+      <input type="text" name="rebuild_admin_email" placeholder="you@example.com" required>
+      <button type="submit" class="btn btn-primary" <?= empty($vpsList) ? 'disabled' : '' ?>>Dựng site</button>
+    </form>
+    <p class="hint" style="margin-top:10px;">Fingerprint agency7.mauthemewp.com: theme <code>flatsome</code> + child <code>themeweb</code>; plugin free <code>woocommerce, contact-form-7, font-awesome-4-menus, builder-responsive-pricing-tables</code>; plugin premium <code>advanced-product-fields-for-woocommerce-pro, hostiko-domain-checker</code>.</p>
+    <?php $results = $rebuildResults; require __DIR__ . '/partials/result-table.php'; ?>
+  </div>
+
+  <div class="card">
+    <h2>Viết bài tự động bằng AI (SAUL AI Writer)</h2>
+    <p class="hint">Cài plugin SAUL AI Writer lên các site đã có trong hệ thống (mỗi dòng 1 domain, tự tìm đúng VPS). Plugin sẽ tự viết bài theo hàng đợi từ khoá và lịch đã chọn — vào <code>wp-admin → Cài đặt → SAUL AI Writer</code> trên từng site để chỉnh riêng. Deploy lại sẽ ghi đè cấu hình và <strong>cộng thêm</strong> từ khoá vào hàng đợi hiện có.</p>
+    <form method="post" action="/wordpress.php" id="ai-writer-form">
+      <?= Csrf::field() ?>
+      <input type="hidden" name="action" value="ai_writer">
+      <label>Danh sách domain (site đã tồn tại trong tool)</label>
+      <textarea name="ai_domains" placeholder="abc.com&#10;xyz.com" required></textarea>
+      <label>Nhà cung cấp AI</label>
+      <select name="ai_provider" id="ai_provider">
+        <option value="openai">OpenAI</option>
+        <option value="claude">Claude (Anthropic)</option>
+        <option value="gemini">Gemini (Google)</option>
+      </select>
+      <label>API key</label>
+      <input type="text" name="ai_api_key" placeholder="sk-..." required autocomplete="off">
+      <label>Model (để trống = mặc định)</label>
+      <input type="text" name="ai_model" id="ai_model" placeholder="Mặc định: gpt-4o-mini">
+      <label>Ngôn ngữ bài viết</label>
+      <input type="text" name="ai_language" value="Tiếng Việt">
+      <label>Số bài mỗi ngày (1–48)</label>
+      <input type="number" name="ai_posts_per_day" value="2" min="1" max="48">
+      <label>Trạng thái bài đăng</label>
+      <select name="ai_post_status">
+        <option value="publish">Đăng ngay (publish)</option>
+        <option value="draft">Bản nháp (draft)</option>
+        <option value="pending">Chờ duyệt (pending)</option>
+      </select>
+      <label>Chuyên mục (tự tạo nếu chưa có — để trống thì dùng mặc định)</label>
+      <input type="text" name="ai_category" placeholder="Tin tức">
+      <label>Ảnh đại diện (AI tạo, đặt làm featured image)</label>
+      <select name="ai_image_provider">
+        <option value="none">Không tạo ảnh</option>
+        <option value="openai">OpenAI (DALL·E 3)</option>
+        <option value="gemini">Google (Imagen 3)</option>
+      </select>
+      <label>API key tạo ảnh (để trống = dùng API key chính nếu cùng hãng)</label>
+      <input type="text" name="ai_image_api_key" placeholder="Chỉ cần khi khác hãng với AI viết bài" autocomplete="off">
+      <label>Yêu cầu thêm cho AI (tuỳ chọn)</label>
+      <textarea name="ai_prompt_extra" placeholder="VD: giọng văn thân thiện, hướng tới người mới, chèn danh sách gạch đầu dòng..."></textarea>
+      <label>Hàng đợi từ khoá (mỗi dòng 1 từ khoá — dùng chung cho tất cả domain ở trên)</label>
+      <textarea name="ai_keywords" placeholder="cách chọn hosting cho website&#10;so sánh vps và hosting&#10;hướng dẫn trỏ tên miền về vps"></textarea>
+      <div class="checkbox-row">
+        <input type="checkbox" name="ai_run_now" id="ai_run_now" value="1">
+        <label for="ai_run_now" style="margin:0;">Viết ngay 1 bài đầu tiên sau khi cài (chạy lâu hơn — chờ AI trả kết quả)</label>
+      </div>
+      <button type="submit" class="btn btn-primary" <?= empty($vpsList) ? 'disabled' : '' ?>>Cài AI Writer</button>
+    </form>
+    <?php $results = $aiResults; require __DIR__ . '/partials/result-table.php'; ?>
+  </div>
 </div>
 
 <script>
@@ -86,5 +193,34 @@ document.addEventListener('DOMContentLoaded', function () {
     pwField.value = out;
   });
   pwField.insertAdjacentElement('afterend', btn);
+});
+
+document.addEventListener('DOMContentLoaded', function () {
+  var provider = document.getElementById('ai_provider');
+  var model = document.getElementById('ai_model');
+  if (!provider || !model) return;
+  var defaults = {
+    openai: 'gpt-4o-mini',
+    claude: 'claude-haiku-4-5-20251001',
+    gemini: 'gemini-2.0-flash'
+  };
+  provider.addEventListener('change', function () {
+    model.placeholder = 'Mặc định: ' + (defaults[provider.value] || '');
+  });
+});
+
+document.addEventListener('DOMContentLoaded', function () {
+  var form = document.getElementById('rebuild-form');
+  if (!form) return;
+  document.querySelectorAll('.preset-btn').forEach(function (b) {
+    b.addEventListener('click', function () {
+      form.querySelector('[name="activate_theme"]').value = b.dataset.activateTheme || '';
+      form.querySelector('[name="plugin_slugs"]').value = b.dataset.pluginSlugs || '';
+      form.querySelector('[name="theme_zips"]').placeholder =
+        'Theme cần: ' + (b.dataset.themeHint || '') + ' — dán URL ZIP bản license của bạn';
+      form.querySelector('[name="plugin_zips"]').placeholder =
+        'Plugin premium cần: ' + (b.dataset.pluginZipHint || '') + ' — dán URL ZIP bản license';
+    });
+  });
 });
 </script>

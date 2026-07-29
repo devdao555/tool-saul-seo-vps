@@ -57,6 +57,27 @@ class SettingsController
         Logger::log('settings', 'delete_cf_account', (string) $id, 'success');
     }
 
+    /**
+     * Verifies a single account's token via Cloudflare's lightweight /user/tokens/verify
+     * endpoint (no zone access) — lets the operator pinpoint a bad token among many accounts
+     * without re-triggering Cloudflare's per-IP "too many authentication failures" block.
+     */
+    public static function testCfAccount(int $id): array
+    {
+        $account = CfAccountRepository::find($id);
+        if (!$account) {
+            throw new \RuntimeException('Cloudflare account không tồn tại.');
+        }
+        try {
+            $result = CfAccountRepository::clientFor($id)->verifyToken();
+            Logger::log('settings', 'test_cf_account', $account['label'], 'success', $result['status'] ?? 'active');
+            return [['domain' => $account['label'], 'ok' => true, 'status' => $result['status'] ?? 'active']];
+        } catch (\Throwable $e) {
+            Logger::log('settings', 'test_cf_account', $account['label'], 'error', $e->getMessage());
+            return [['domain' => $account['label'], 'ok' => false, 'error' => $e->getMessage()]];
+        }
+    }
+
     public static function saveNamecheap(string $apiUser, string $apiKey, string $clientIp): void
     {
         SettingsRepository::set('namecheap_api_user', trim($apiUser));
