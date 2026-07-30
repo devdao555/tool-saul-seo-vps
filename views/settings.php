@@ -4,6 +4,7 @@ use App\Support\Csrf;
 
 /** @var array $cfAccounts */
 /** @var array $namecheap */
+/** @var array $originCert */
 /** @var array|null $bulkCfResults */
 /** @var string|null $ok */
 /** @var string|null $error */
@@ -81,6 +82,23 @@ use App\Support\Csrf;
       <label>Client IP</label>
       <input type="text" name="nc_client_ip" value="<?= htmlspecialchars($namecheap['client_ip']) ?>" placeholder="IP server đã whitelist ở Namecheap">
       <button type="submit" class="btn btn-primary">Lưu cấu hình Namecheap</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Cloudflare Origin Certificate</h2>
+    <p class="hint">Dùng để cài HTTPS cho site/subdomain ở mục <a href="/wordpress.php">Cấu hình website</a>. Tạo tại Cloudflare &gt; SSL/TLS &gt; Origin Server &gt; Create Certificate, chọn hostname dạng <code>*.domain.com</code> và <code>domain.com</code> để một cert dùng chung cho mọi subdomain (hạn tối đa 15 năm).</p>
+    <div class="alert alert-warn" style="margin-bottom:12px;">
+      Cert này chỉ được Cloudflare tin tưởng, không phải trình duyệt — site bắt buộc bật mây cam và để SSL mode <strong>Full (strict)</strong>. Private key chỉ hiện <strong>một lần duy nhất</strong> lúc tạo, lưu lại ngay.
+    </div>
+    <form method="post" action="/settings.php">
+      <?= Csrf::field() ?>
+      <input type="hidden" name="action" value="save_origin_cert">
+      <label>Origin Certificate (PEM) <?php if ($originCert['has_cert']): ?><span class="badge badge-success">đã lưu</span><?php endif; ?></label>
+      <textarea name="origin_cert" rows="5" placeholder="<?= $originCert['has_cert'] ? 'Để trống nếu không đổi' : '-----BEGIN CERTIFICATE-----' ?>"></textarea>
+      <label>Private Key (PEM) <?php if ($originCert['has_key']): ?><span class="badge badge-success">đã lưu</span><?php endif; ?></label>
+      <textarea name="origin_key" rows="5" placeholder="<?= $originCert['has_key'] ? 'Để trống nếu không đổi' : '-----BEGIN PRIVATE KEY-----' ?>"></textarea>
+      <button type="submit" class="btn btn-primary">Lưu Origin Certificate</button>
     </form>
   </div>
 </div>

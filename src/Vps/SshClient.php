@@ -56,6 +56,32 @@ class SshClient
     }
 
     /**
+     * Copies a local file to the remote host with `scp`. Used for pushing theme/plugin ZIPs
+     * and .wpress archives that the operator uploaded through the web UI, so provisioning
+     * doesn't require the archive to be reachable over HTTP from the VPS.
+     */
+    public function uploadFile(string $localPath, string $remotePath, int $timeout = 600): SshResult
+    {
+        if (!is_file($localPath)) {
+            throw new \RuntimeException("Không tìm thấy file cần upload: {$localPath}");
+        }
+
+        $scpArgs = [
+            'scp',
+            '-i', $this->keyFile,
+            '-P', (string) $this->port,
+            '-o', 'BatchMode=yes',
+            '-o', 'StrictHostKeyChecking=accept-new',
+            '-o', 'ConnectTimeout=15',
+            $localPath,
+            $this->user . '@' . $this->host . ':' . $remotePath,
+        ];
+        $command = implode(' ', array_map('escapeshellarg', $scpArgs));
+
+        return self::execute($command, null, [], $timeout);
+    }
+
+    /**
      * Runs an arbitrary shell command via proc_open, optionally feeding stdin and/or
      * overriding/adding environment variables for the child process. Shared by the
      * key-based path above and by SshBootstrap's password-based path (which needs

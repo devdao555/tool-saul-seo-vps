@@ -78,6 +78,46 @@ class SettingsController
         }
     }
 
+    /**
+     * Stores the Cloudflare Origin CA certificate + private key used to put HTTPS on demo
+     * subdomains. One wildcard cert (*.example.com) covers every subdomain, so this is a
+     * one-time paste; the key is encrypted at rest like every other secret here.
+     */
+    public static function saveOriginCert(string $certPem, string $keyPem): void
+    {
+        $certPem = trim($certPem);
+        $keyPem = trim($keyPem);
+
+        if ($certPem !== '' && !str_contains($certPem, '-----BEGIN CERTIFICATE-----')) {
+            throw new \InvalidArgumentException('Certificate không hợp lệ — phải là khối PEM bắt đầu bằng -----BEGIN CERTIFICATE-----.');
+        }
+        if ($keyPem !== '' && !preg_match('/-----BEGIN (RSA |EC )?PRIVATE KEY-----/', $keyPem)) {
+            throw new \InvalidArgumentException('Private key không hợp lệ — phải là khối PEM bắt đầu bằng -----BEGIN PRIVATE KEY-----.');
+        }
+
+        // Blank means "keep what's stored", matching how the Namecheap key behaves above.
+        if ($certPem !== '') {
+            SettingsRepository::set('cf_origin_cert', $certPem);
+        }
+        if ($keyPem !== '') {
+            SettingsRepository::set('cf_origin_key', $keyPem);
+        }
+        Logger::log('settings', 'save_origin_cert', null, 'success');
+    }
+
+    /**
+     * @return array{cert:string, key:string}|null
+     */
+    public static function originCert(): ?array
+    {
+        $cert = SettingsRepository::get('cf_origin_cert');
+        $key = SettingsRepository::get('cf_origin_key');
+        if (!$cert || !$key) {
+            return null;
+        }
+        return ['cert' => $cert, 'key' => $key];
+    }
+
     public static function saveNamecheap(string $apiUser, string $apiKey, string $clientIp): void
     {
         SettingsRepository::set('namecheap_api_user', trim($apiUser));

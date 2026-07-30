@@ -16,6 +16,13 @@ use App\Support\Validator;
  */
 class WordPressManager
 {
+    /**
+     * Where operator-supplied theme/plugin ZIPs and .wpress archives live on each VPS.
+     * Files land here either by upload through the web UI or by the operator dropping
+     * them in via aaPanel/FTP (which sidesteps PHP's upload size limits).
+     */
+    public const LIBRARY_DIR = '/www/saul-library';
+
     public function __construct(private array $vps)
     {
     }
@@ -39,12 +46,40 @@ class WordPressManager
         return SshClient::bashQuote($value);
     }
 
-    private function nginxVhost(string $domain, string $webroot): string
+    private function certDir(string $domain): string
+    {
+        return '/www/server/panel/vhost/cert/' . $domain;
+    }
+
+    private function nginxVhost(string $domain, string $webroot, bool $ssl = false): string
     {
         $phpVersion = preg_replace('/[^0-9]/', '', (string) $this->vps['php_version']);
-        return <<<CONF
+
+        $listen = "listen 80;";
+        $redirect = '';
+        if ($ssl) {
+            $certDir = $this->certDir($domain);
+            $listen = <<<SSLCONF
+listen 443 ssl;
+    http2 on;
+    ssl_certificate {$certDir}/fullchain.pem;
+    ssl_certificate_key {$certDir}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:SSL:10m;
+SSLCONF;
+            $redirect = <<<REDIR
 server {
     listen 80;
+    server_name {$domain} www.{$domain};
+    return 301 https://\$host\$request_uri;
+}
+
+REDIR;
+        }
+
+        return <<<CONF
+{$redirect}server {
+    {$listen}
     server_name {$domain} www.{$domain};
     root {$webroot};
     index index.php index.html index.htm;
@@ -169,7 +204,7 @@ BASH;
 
         $steps = [];
         foreach ($themeZips as $zip) {
-            $steps[] = 'wp theme install ' . $this->q($this->assertUrl($zip)) . " --force --allow-root --path={$path}";
+            $steps[] = 'wp theme install ' . $this->q($this->assertUrlOrLibraryPath($zip)) . " --force --allow-root --path={$path}";
         }
         if ($activateTheme !== '') {
             $steps[] = 'wp theme activate ' . $this->q($activateTheme) . " --allow-root --path={$path}";
@@ -181,12 +216,12 @@ BASH;
             $steps[] = 'wp plugin install ' . $this->q($slug) . " --activate --allow-root --path={$path}";
         }
         foreach ($pluginZips as $zip) {
-            $steps[] = 'wp plugin install ' . $this->q($this->assertUrl($zip)) . " --activate --force --allow-root --path={$path}";
+            $steps[] = 'wp plugin install ' . $this->q($this->assertUrlOrLibraryPath($zip)) . " --activate --force --allow-root --path={$path}";
         }
         if ($demoXmlUrl !== '') {
             $tmpXml = '/tmp/saul-demo-' . substr(md5($domain), 0, 8) . '.xml';
             $steps[] = "wp plugin install wordpress-importer --activate --allow-root --path={$path}";
-            $steps[] = 'curl -fsSL ' . $this->q($this->assertUrl($demoXmlUrl)) . ' -o ' . $this->q($tmpXml);
+            $steps[] = $this->fetchArchiveCmd($demoXmlUrl, $tmpXml);
             $steps[] = "wp import {$this->q($tmpXml)} --authors=create --allow-root --path={$path}";
             $steps[] = "rm -f {$this->q($tmpXml)}";
         }
@@ -197,7 +232,7 @@ BASH;
             $archive = 'saul-restore-' . substr(md5($domain), 0, 8) . '.wpress';
             $steps[] = "wp plugin install all-in-one-wp-migration --activate --allow-root --path={$path}";
             $steps[] = 'mkdir -p ' . $this->q($backupDir);
-            $steps[] = 'curl -fsSL ' . $this->q($this->assertUrl($wpressUrl)) . ' -o ' . $this->q($backupDir . '/' . $archive);
+            $steps[] = $this->fetchArchiveCmd($wpressUrl, $backupDir . '/' . $archive);
             $steps[] = "wp ai1wm restore {$this->q($archive)} --yes --allow-root --path={$path}";
             $steps[] = 'rm -f ' . $this->q($backupDir . '/' . $archive);
         }
@@ -222,6 +257,102 @@ BASH;
         return $url;
     }
 
+    /**
+     * Accepts either an http(s) URL or an archive already sitting in the VPS library dir.
+     * Anything outside that directory is rejected so a crafted path can't make WP-CLI read
+     * arbitrary files on the server.
+     */
+    private function assertUrlOrLibraryPath(string $value): string
+    {
+        $value = trim($value);
+        if (preg_match('#^https?://#i', $value)) {
+            return $this->assertUrl($value);
+        }
+        if (!Validator::isSafePath($value) || !str_starts_with($value, self::LIBRARY_DIR . '/')) {
+            throw new \InvalidArgumentException("Đường dẫn file không hợp lệ: {$value}");
+        }
+        return $value;
+    }
+
+    /**
+     * Fetches an archive into place: a URL is downloaded on the VPS with curl, a library
+     * path is copied. Returns the bash command, so callers can slot it into their script.
+     */
+    private function fetchArchiveCmd(string $source, string $destination): string
+    {
+        $source = $this->assertUrlOrLibraryPath($source);
+        return preg_match('#^https?://#i', $source)
+            ? 'curl -fsSL ' . $this->q($source) . ' -o ' . $this->q($destination)
+            : 'cp -f ' . $this->q($source) . ' ' . $this->q($destination);
+    }
+
+    /**
+     * Uploads a local archive (already validated by the controller) into the VPS library dir
+     * and returns its remote path, ready to pass to createSiteFromTemplate().
+     */
+    public function uploadToLibrary(string $localPath, string $filename): string
+    {
+        if (!preg_match('/^[A-Za-z0-9._-]{1,120}$/', $filename)) {
+            throw new \InvalidArgumentException("Tên file không hợp lệ: {$filename}");
+        }
+
+        $prepare = $this->run('mkdir -p ' . $this->q(self::LIBRARY_DIR) . ' && chmod 750 ' . $this->q(self::LIBRARY_DIR) . ' && echo "SAUL_TOOL_OK"');
+        if (!$prepare->ok()) {
+            throw new \RuntimeException('Không tạo được thư mục kho trên VPS: ' . trim($prepare->stderr));
+        }
+
+        $remotePath = self::LIBRARY_DIR . '/' . $filename;
+        $upload = SshClient::forVps($this->vps)->uploadFile($localPath, $remotePath);
+        if ($upload->exitCode !== 0) {
+            throw new \RuntimeException('Upload lên VPS thất bại: ' . trim($upload->stderr));
+        }
+
+        return $remotePath;
+    }
+
+    /**
+     * Lists archives available in the VPS library dir, so the operator can pick a file that
+     * was put there outside the browser (aaPanel/FTP) — no PHP upload limit involved.
+     *
+     * @return array<int, array{path:string, name:string, size:string}>
+     */
+    public function listLibraryArchives(): array
+    {
+        $dir = $this->q(self::LIBRARY_DIR);
+        $result = $this->run("mkdir -p {$dir}\nfind {$dir} -maxdepth 1 -type f \\( -name '*.zip' -o -name '*.wpress' \\) -printf '%f\\t%s\\n' | sort\necho \"SAUL_TOOL_OK\"");
+        if (!$result->ok()) {
+            return [];
+        }
+
+        $archives = [];
+        foreach (preg_split('/\r\n|\r|\n/', $result->stdout) ?: [] as $line) {
+            if (!str_contains($line, "\t")) {
+                continue;
+            }
+            [$name, $bytes] = explode("\t", trim($line), 2);
+            if ($name === '' || !ctype_digit($bytes)) {
+                continue;
+            }
+            $archives[] = [
+                'path' => self::LIBRARY_DIR . '/' . $name,
+                'name' => $name,
+                'size' => self::humanSize((int) $bytes),
+            ];
+        }
+        return $archives;
+    }
+
+    private static function humanSize(int $bytes): string
+    {
+        foreach (['B', 'KB', 'MB', 'GB'] as $unit) {
+            if ($bytes < 1024 || $unit === 'GB') {
+                return round($bytes, 1) . ' ' . $unit;
+            }
+            $bytes /= 1024;
+        }
+        return $bytes . ' B';
+    }
+
     public function cloneSite(string $sourceDomain, string $targetDomain, bool $closeIndexing = false): SshResult
     {
         $this->assertDomain($sourceDomain);
@@ -240,6 +371,16 @@ BASH;
         $blogPublicCmd = $closeIndexing
             ? "wp option update blog_public 0 --allow-root --path={$this->q($targetRoot)}"
             : 'true';
+
+        // Dump to /tmp, never into the source webroot — a dump sitting under the webroot is
+        // downloadable over HTTP for as long as the clone runs.
+        $dumpFile = '/tmp/saul-clone-' . substr(md5($sourceDomain . $targetDomain), 0, 12) . '.sql';
+
+        // Replacing the source host directly would re-match text an earlier pass just wrote
+        // whenever the target contains the source (cloning site.com to demo1.site.com yields
+        // demo1.demo1.site.com). Bouncing through a placeholder that contains neither host
+        // makes the rewrite safe in both directions.
+        $placeholder = 'saulclone' . substr(md5($targetDomain), 0, 12) . '.invalid';
 
         $script = <<<BASH
 set -e
@@ -261,21 +402,77 @@ mysql -u{$this->q($mysqlUser)} -p{$this->q($mysqlPass)} -e "CREATE DATABASE IF N
 mysql -u{$this->q($mysqlUser)} -p{$this->q($mysqlPass)} -e "CREATE USER IF NOT EXISTS '{$dbUser}'@'localhost' IDENTIFIED BY '{$dbPass}';"
 mysql -u{$this->q($mysqlUser)} -p{$this->q($mysqlPass)} -e "GRANT ALL PRIVILEGES ON \`{$dbName}\`.* TO '{$dbUser}'@'localhost'; FLUSH PRIVILEGES;"
 
-wp db export {$this->q($sourceRoot . '/saul-clone-export.sql')} --allow-root --path={$this->q($sourceRoot)}
-mysql -u{$this->q($mysqlUser)} -p{$this->q($mysqlPass)} {$this->q($dbName)} < {$this->q($sourceRoot . '/saul-clone-export.sql')}
-rm -f {$this->q($sourceRoot . '/saul-clone-export.sql')}
+wp db export {$this->q($dumpFile)} --allow-root --path={$this->q($sourceRoot)}
+mysql -u{$this->q($mysqlUser)} -p{$this->q($mysqlPass)} {$this->q($dbName)} < {$this->q($dumpFile)}
+rm -f {$this->q($dumpFile)}
 
 wp config set DB_NAME {$this->q($dbName)} --allow-root --path={$this->q($targetRoot)}
 wp config set DB_USER {$this->q($dbUser)} --allow-root --path={$this->q($targetRoot)}
 wp config set DB_PASSWORD {$this->q($dbPass)} --allow-root --path={$this->q($targetRoot)}
 wp config set DB_HOST localhost --allow-root --path={$this->q($targetRoot)}
 
-wp search-replace {$this->q('https://' . $sourceDomain)} {$this->q('https://' . $targetDomain)} --all-tables --allow-root --path={$this->q($targetRoot)} || true
-wp search-replace {$this->q('http://' . $sourceDomain)} {$this->q('https://' . $targetDomain)} --all-tables --allow-root --path={$this->q($targetRoot)} || true
-wp search-replace {$this->q($sourceDomain)} {$this->q($targetDomain)} --all-tables --allow-root --path={$this->q($targetRoot)} || true
+wp search-replace {$this->q($sourceDomain)} {$this->q($placeholder)} --all-tables --skip-columns=guid --allow-root --path={$this->q($targetRoot)} || true
+wp search-replace {$this->q($placeholder)} {$this->q($targetDomain)} --all-tables --skip-columns=guid --allow-root --path={$this->q($targetRoot)} || true
+wp search-replace {$this->q('http://' . $targetDomain)} {$this->q('https://' . $targetDomain)} --all-tables --skip-columns=guid --allow-root --path={$this->q($targetRoot)} || true
+wp option update home {$this->q('https://' . $targetDomain)} --allow-root --path={$this->q($targetRoot)}
+wp option update siteurl {$this->q('https://' . $targetDomain)} --allow-root --path={$this->q($targetRoot)}
 {$blogPublicCmd}
 
 chown -R www:www {$this->q($targetRoot)} || true
+echo "SAUL_TOOL_OK"
+BASH;
+
+        return $this->run($script);
+    }
+
+    /**
+     * Installs a Cloudflare Origin CA certificate on a site and switches its vhost to HTTPS.
+     *
+     * An origin cert is signed by Cloudflare's private CA, not a public one: browsers only
+     * accept it when the hostname is proxied (orange cloud) and the zone's SSL mode is
+     * Full (strict). Hitting the origin IP directly will always warn — that is by design.
+     * One wildcard cert (*.example.com) covers every subdomain, so this is normally called
+     * with the same cert/key for each new demo site.
+     */
+    public function installOriginCert(string $domain, string $certPem, string $keyPem): SshResult
+    {
+        $this->assertDomain($domain);
+
+        $certPem = trim($certPem);
+        $keyPem = trim($keyPem);
+        if (!str_contains($certPem, '-----BEGIN CERTIFICATE-----')) {
+            throw new \InvalidArgumentException('Certificate không hợp lệ — thiếu dòng BEGIN CERTIFICATE.');
+        }
+        if (!preg_match('/-----BEGIN (RSA |EC )?PRIVATE KEY-----/', $keyPem)) {
+            throw new \InvalidArgumentException('Private key không hợp lệ — thiếu dòng BEGIN PRIVATE KEY.');
+        }
+
+        $webroot = $this->webroot($domain);
+        $certDir = $this->certDir($domain);
+        $vhostPath = '/www/server/panel/vhost/nginx/' . $domain . '.conf';
+        $vhost = $this->nginxVhost($domain, $webroot, true);
+
+        $script = <<<BASH
+set -e
+if [ ! -d {$this->q($webroot)} ]; then
+  echo "SITE_NOT_FOUND"
+  exit 1
+fi
+
+mkdir -p {$this->q($certDir)}
+cat > {$this->q($certDir . '/fullchain.pem')} <<'SAULCERTPEM'
+{$certPem}
+SAULCERTPEM
+cat > {$this->q($certDir . '/privkey.pem')} <<'SAULKEYPEM'
+{$keyPem}
+SAULKEYPEM
+chmod 644 {$this->q($certDir . '/fullchain.pem')}
+chmod 600 {$this->q($certDir . '/privkey.pem')}
+
+cat > {$this->q($vhostPath)} <<'NGINXCONF'
+{$vhost}
+NGINXCONF
+nginx -t && (nginx -s reload || systemctl reload nginx || service nginx reload)
 echo "SAUL_TOOL_OK"
 BASH;
 
@@ -400,7 +597,7 @@ BASH;
         return $this->run($script, $runNow ? 420 : 180);
     }
 
-    private function run(string $script, int $timeout = 180): SshResult
+    protected function run(string $script, int $timeout = 180): SshResult
     {
         $ssh = SshClient::forVps($this->vps);
         return $ssh->runScript($script, $timeout);

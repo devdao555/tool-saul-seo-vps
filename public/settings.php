@@ -44,6 +44,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 );
                 Flash::set('ok', 'Đã lưu cấu hình Namecheap.');
                 break;
+
+            case 'save_origin_cert':
+                SettingsController::saveOriginCert(
+                    (string) ($_POST['origin_cert'] ?? ''),
+                    (string) ($_POST['origin_key'] ?? '')
+                );
+                Flash::set('ok', 'Đã lưu Cloudflare Origin Certificate.');
+                break;
         }
     } catch (\Throwable $e) {
         Flash::set('error', $e->getMessage());
@@ -58,6 +66,10 @@ $namecheap = [
     'api_user' => SettingsRepository::get('namecheap_api_user') ?? '',
     'client_ip' => SettingsRepository::get('namecheap_client_ip') ?? '',
     'has_key' => SettingsRepository::get('namecheap_api_key') !== null,
+];
+$originCert = [
+    'has_cert' => SettingsRepository::get('cf_origin_cert') !== null,
+    'has_key' => SettingsRepository::get('cf_origin_key') !== null,
 ];
 $ok = Flash::pull('ok');
 $error = Flash::pull('error');

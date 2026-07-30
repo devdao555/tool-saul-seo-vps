@@ -54,6 +54,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 Flash::set('rebuild_results', $results);
                 break;
 
+            case 'upload_archive':
+                $results = WordPressController::uploadArchive(
+                    (int) ($_POST['upload_vps_id'] ?? 0),
+                    $_FILES['archive'] ?? []
+                );
+                Flash::set('upload_results', $results);
+                break;
+
+            case 'install_ssl':
+                $results = WordPressController::installSsl((string) ($_POST['ssl_domains'] ?? ''));
+                Flash::set('ssl_results', $results);
+                break;
+
             case 'ai_writer':
                 $results = WordPressController::deployAiWriter(
                     (string) ($_POST['ai_domains'] ?? ''),
@@ -79,7 +92,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         Flash::set('error', $e->getMessage());
     }
 
-    header('Location: /wordpress.php');
+    // Keep the library listing open on the VPS the operator was working with, so an upload
+    // is followed by a list that already contains the file.
+    $backTo = '/wordpress.php';
+    if (($_POST['upload_vps_id'] ?? '') !== '') {
+        $backTo .= '?library_vps=' . (int) $_POST['upload_vps_id'];
+    }
+    header('Location: ' . $backTo);
     exit;
 }
 
@@ -87,8 +106,15 @@ $vpsList = VpsRepository::all();
 $createResults = Flash::pull('create_results');
 $cloneResults = Flash::pull('clone_results');
 $rebuildResults = Flash::pull('rebuild_results');
+$uploadResults = Flash::pull('upload_results');
+$sslResults = Flash::pull('ssl_results');
 $aiResults = Flash::pull('ai_results');
 $siteTemplates = SiteTemplates::all();
+
+// Listing the library costs an SSH round-trip, so only do it when a VPS is picked.
+$libraryVpsId = (int) ($_GET['library_vps'] ?? 0);
+$libraryArchives = $libraryVpsId > 0 ? WordPressController::libraryArchives($libraryVpsId) : [];
+$libraryDir = App\Vps\WordPressManager::LIBRARY_DIR;
 $error = Flash::pull('error');
 
 $pageTitle = 'Cấu hình website';

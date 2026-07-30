@@ -136,6 +136,121 @@ class WordPressController
         }
     }
 
+    /**
+     * Pushes an archive the operator picked in the browser up to the VPS library, so it can
+     * be used to provision a site without being published on a public URL first.
+     *
+     * @param array $file one entry of $_FILES
+     */
+    public static function uploadArchive(int $vpsId, array $file): array
+    {
+        $vps = VpsRepository::find($vpsId);
+        if (!$vps) {
+            throw new \RuntimeException('VPS không tồn tại.');
+        }
+
+        $error = $file['error'] ?? UPLOAD_ERR_NO_FILE;
+        if ($error !== UPLOAD_ERR_OK) {
+            throw new \RuntimeException(self::uploadErrorMessage((int) $error));
+        }
+        if (!is_uploaded_file($file['tmp_name'] ?? '')) {
+            throw new \RuntimeException('File upload không hợp lệ.');
+        }
+
+        $name = basename((string) ($file['name'] ?? ''));
+        $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+        if (!in_array($extension, ['zip', 'wpress'], true)) {
+            throw new \InvalidArgumentException('Chỉ nhận file .zip hoặc .wpress.');
+        }
+
+        // Normalise to a shell/scp-safe name; the remote path is built from this.
+        $safeName = preg_replace('/[^A-Za-z0-9._-]+/', '-', $name) ?? '';
+        $safeName = trim($safeName, '-.');
+        if ($safeName === '') {
+            throw new \InvalidArgumentException('Tên file không hợp lệ.');
+        }
+
+        try {
+            $remotePath = (new WordPressManager($vps))->uploadToLibrary($file['tmp_name'], $safeName);
+            Logger::log('wordpress', 'upload_archive', $safeName, 'success', "VPS #{$vpsId} -> {$remotePath}");
+            return [['domain' => $safeName, 'ok' => true, 'path' => $remotePath]];
+        } catch (\Throwable $e) {
+            Logger::log('wordpress', 'upload_archive', $safeName, 'error', $e->getMessage());
+            return [['domain' => $safeName, 'ok' => false, 'error' => $e->getMessage()]];
+        }
+    }
+
+    /**
+     * @return array<int, array{path:string, name:string, size:string}>
+     */
+    public static function libraryArchives(int $vpsId): array
+    {
+        $vps = VpsRepository::find($vpsId);
+        if (!$vps) {
+            return [];
+        }
+        try {
+            return (new WordPressManager($vps))->listLibraryArchives();
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    private static function uploadErrorMessage(int $code): string
+    {
+        return match ($code) {
+            UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE =>
+                'File vượt quá giới hạn upload của PHP. Tăng upload_max_filesize và post_max_size trong aaPanel, '
+                . 'hoặc up file thẳng vào ' . WordPressManager::LIBRARY_DIR . ' trên VPS rồi chọn từ danh sách.',
+            UPLOAD_ERR_PARTIAL => 'File upload bị gián đoạn, thử lại.',
+            UPLOAD_ERR_NO_FILE => 'Chưa chọn file nào.',
+            UPLOAD_ERR_NO_TMP_DIR, UPLOAD_ERR_CANT_WRITE => 'Server không ghi được file tạm.',
+            default => "Upload thất bại (mã lỗi {$code}).",
+        };
+    }
+
+    /**
+     * Installs the stored Cloudflare Origin certificate on one or more sites and flips their
+     * vhost to HTTPS. The cert is only trusted through Cloudflare's proxy, so the caller is
+     * expected to have the hostname proxied with SSL mode Full (strict).
+     */
+    public static function installSsl(string $domainListRaw): array
+    {
+        $origin = SettingsController::originCert();
+        if (!$origin) {
+            throw new \RuntimeException('Chưa lưu Cloudflare Origin Certificate trong Cài đặt.');
+        }
+
+        $results = [];
+        foreach (Validator::domainList($domainListRaw) as $domain) {
+            $row = DomainRepository::findByName($domain);
+            if (!$row || !$row['vps_id']) {
+                $results[] = ['domain' => $domain, 'ok' => false, 'error' => 'Domain chưa gắn với VPS nào trong hệ thống.'];
+                continue;
+            }
+            $vps = VpsRepository::find((int) $row['vps_id']);
+            if (!$vps) {
+                $results[] = ['domain' => $domain, 'ok' => false, 'error' => 'Không tìm thấy VPS đã gắn.'];
+                continue;
+            }
+            try {
+                $result = (new WordPressManager($vps))->installOriginCert($domain, $origin['cert'], $origin['key']);
+                if (str_contains($result->stdout, 'SITE_NOT_FOUND')) {
+                    throw new \RuntimeException('Không tìm thấy webroot của site này trên VPS — tạo site trước khi cài SSL.');
+                }
+                if (!$result->ok()) {
+                    throw new \RuntimeException(self::tail($result->stderr . "\n" . $result->stdout));
+                }
+                Logger::log('wordpress', 'install_ssl', $domain, 'success', 'Cloudflare Origin cert');
+                $results[] = ['domain' => $domain, 'ok' => true];
+            } catch (\Throwable $e) {
+                Logger::log('wordpress', 'install_ssl', $domain, 'error', $e->getMessage());
+                $results[] = ['domain' => $domain, 'ok' => false, 'error' => $e->getMessage()];
+            }
+        }
+        return $results;
+    }
+
     public static function deleteSites(string $domainListRaw): array
     {
         $results = [];

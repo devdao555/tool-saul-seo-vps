@@ -6,8 +6,13 @@ use App\Support\Csrf;
 /** @var array|null $createResults */
 /** @var array|null $cloneResults */
 /** @var array|null $rebuildResults */
+/** @var array|null $uploadResults */
+/** @var array|null $sslResults */
 /** @var array|null $aiResults */
 /** @var array $siteTemplates */
+/** @var array $libraryArchives */
+/** @var int $libraryVpsId */
+/** @var string $libraryDir */
 /** @var string|null $error */
 ?>
 
@@ -69,6 +74,73 @@ use App\Support\Csrf;
   </div>
 
   <div class="card">
+    <h2>Kho source (.zip / .wpress)</h2>
+    <p class="hint">Đẩy file source lên VPS để dùng cho ô "Dựng site" bên dưới — không cần host file ở đâu công khai. Sau khi upload, copy đường dẫn hiện ra và dán vào ô ZIP/.wpress tương ứng.</p>
+
+    <form method="post" action="/wordpress.php" enctype="multipart/form-data">
+      <?= Csrf::field() ?>
+      <input type="hidden" name="action" value="upload_archive">
+      <label>Chọn VPS</label>
+      <select name="upload_vps_id" required>
+        <?php foreach ($vpsList as $v): ?>
+          <option value="<?= (int) $v['id'] ?>" <?= $libraryVpsId === (int) $v['id'] ? 'selected' : '' ?>><?= htmlspecialchars($v['label']) ?> — <?= htmlspecialchars($v['ip']) ?></option>
+        <?php endforeach; ?>
+      </select>
+      <label>File .zip hoặc .wpress</label>
+      <input type="file" name="archive" accept=".zip,.wpress" required>
+      <button type="submit" class="btn btn-primary" <?= empty($vpsList) ? 'disabled' : '' ?>>Upload lên VPS</button>
+    </form>
+    <p class="hint" style="margin-top:6px;">File <code>.wpress</code> thường rất nặng. Nếu báo lỗi vượt giới hạn upload, tăng <code>upload_max_filesize</code> và <code>post_max_size</code> trong aaPanel, hoặc up thẳng file vào <code><?= htmlspecialchars($libraryDir) ?></code> trên VPS rồi bấm "Xem kho" bên dưới.</p>
+    <?php $results = $uploadResults; require __DIR__ . '/partials/result-table.php'; ?>
+
+    <form method="get" action="/wordpress.php" style="margin-top:14px;">
+      <label>Xem file đã có trong kho</label>
+      <select name="library_vps" required>
+        <option value="">— chọn VPS —</option>
+        <?php foreach ($vpsList as $v): ?>
+          <option value="<?= (int) $v['id'] ?>" <?= $libraryVpsId === (int) $v['id'] ? 'selected' : '' ?>><?= htmlspecialchars($v['label']) ?> — <?= htmlspecialchars($v['ip']) ?></option>
+        <?php endforeach; ?>
+      </select>
+      <button type="submit" class="btn btn-ghost" <?= empty($vpsList) ? 'disabled' : '' ?>>Xem kho</button>
+    </form>
+
+    <?php if ($libraryVpsId > 0): ?>
+      <?php if (empty($libraryArchives)): ?>
+        <p class="hint" style="margin-top:10px;">Kho <code><?= htmlspecialchars($libraryDir) ?></code> chưa có file .zip hoặc .wpress nào.</p>
+      <?php else: ?>
+        <table style="margin-top:10px;">
+          <thead><tr><th>File</th><th>Dung lượng</th><th>Đường dẫn để dán</th></tr></thead>
+          <tbody>
+            <?php foreach ($libraryArchives as $archive): ?>
+              <tr>
+                <td><?= htmlspecialchars($archive['name']) ?></td>
+                <td><?= htmlspecialchars($archive['size']) ?></td>
+                <td><code><?= htmlspecialchars($archive['path']) ?></code></td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      <?php endif; ?>
+    <?php endif; ?>
+  </div>
+
+  <div class="card">
+    <h2>Cài SSL cho domain / subdomain</h2>
+    <p class="hint">Cài Cloudflare Origin Certificate đã lưu trong <a href="/settings.php">Cài đặt</a> lên site, rồi chuyển vhost sang HTTPS (kèm redirect 80 → 443). Một cert wildcard <code>*.domain.com</code> dùng được cho mọi subdomain.</p>
+    <div class="alert alert-warn" style="margin-bottom:12px;">
+      Origin Certificate chỉ được Cloudflare tin tưởng, không phải trình duyệt. Domain <strong>bắt buộc phải bật mây cam (proxied)</strong> và zone để SSL mode <strong>Full (strict)</strong>, nếu không khách vào site sẽ thấy cảnh báo chứng chỉ.
+    </div>
+    <form method="post" action="/wordpress.php">
+      <?= Csrf::field() ?>
+      <input type="hidden" name="action" value="install_ssl">
+      <label>Mỗi dòng 1 domain (phải đã tạo site và đã gắn VPS)</label>
+      <textarea name="ssl_domains" placeholder="demo1.domain.com&#10;demo2.domain.com" required></textarea>
+      <button type="submit" class="btn btn-primary">Cài SSL</button>
+    </form>
+    <?php $results = $sslResults; require __DIR__ . '/partials/result-table.php'; ?>
+  </div>
+
+  <div class="card">
     <h2>Dựng lại từ template (rebuild site đã scan)</h2>
     <p class="hint">Dùng khi bạn scan một site bên ngoài và muốn dựng lại giao diện: tool cài WP trắng rồi cài theme + plugin từ các file ZIP bạn cung cấp URL. <strong>Bạn phải tự có bản license</strong> của theme/plugin premium — tool không tải hộ. Plugin miễn phí điền slug wp.org là được.</p>
     <?php if (!empty($siteTemplates)): ?>
@@ -96,18 +168,18 @@ use App\Support\Csrf;
       </select>
       <label>Domain</label>
       <input type="text" name="rebuild_domain" placeholder="newsite.com" required>
-      <label>Theme ZIP URLs (mỗi dòng 1 URL — parent trước, child sau)</label>
-      <textarea name="theme_zips" placeholder="https://yourhost.com/flatsome.zip&#10;https://yourhost.com/themeweb-child.zip"></textarea>
+      <label>Theme ZIP — URL hoặc đường dẫn file trong kho (mỗi dòng 1 cái, parent trước, child sau)</label>
+      <textarea name="theme_zips" placeholder="https://yourhost.com/flatsome.zip&#10;<?= htmlspecialchars($libraryDir) ?>/themeweb-child.zip"></textarea>
       <label>Theme slug để kích hoạt</label>
       <input type="text" name="activate_theme" placeholder="themeweb">
       <label>Plugin miễn phí (slug wp.org, cách nhau bởi dấu phẩy)</label>
       <input type="text" name="plugin_slugs" placeholder="woocommerce, contact-form-7, font-awesome-4-menus">
-      <label>Plugin premium ZIP URLs (mỗi dòng 1 URL)</label>
-      <textarea name="plugin_zips" placeholder="https://yourhost.com/advanced-product-fields-pro.zip"></textarea>
-      <label>Demo content XML URL (tuỳ chọn — file WordPress export .xml)</label>
+      <label>Plugin premium ZIP — URL hoặc đường dẫn file trong kho (mỗi dòng 1 cái)</label>
+      <textarea name="plugin_zips" placeholder="<?= htmlspecialchars($libraryDir) ?>/advanced-product-fields-pro.zip"></textarea>
+      <label>Demo content XML (tuỳ chọn — URL hoặc file .xml trong kho)</label>
       <input type="text" name="demo_xml_url" placeholder="https://yourhost.com/agency7-demo.xml">
-      <label>File .wpress URL (All-in-One WP Migration — clone 1:1 cả file + database)</label>
-      <input type="text" name="wpress_url" placeholder="https://yourhost.com/agency7.wpress">
+      <label>File .wpress — URL hoặc đường dẫn trong kho (All-in-One WP Migration, clone 1:1 cả file + database)</label>
+      <input type="text" name="wpress_url" placeholder="<?= htmlspecialchars($libraryDir) ?>/agency7.wpress">
       <p class="hint" style="margin-top:6px;">Nếu bạn có file <code>.wpress</code>, đây là cách clone <strong>giống 100%</strong>: tool cài All-in-One WP Migration rồi restore nguyên site. Khi đó các ô theme/plugin/XML ở trên là tuỳ chọn (không bắt buộc). Lưu ý: sau restore, tài khoản admin sẽ là của site gốc, không phải user/pass bạn nhập bên dưới.</p>
       <label>Admin username</label>
       <input type="text" name="rebuild_admin_user" value="admin">
